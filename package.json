@@ -1,18 +1,35 @@
 {
   "name": "why-zenless-mod-manager",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "ZZZ Mod Manager for Linux",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --linux AppImage"
   },
   "devDependencies": {
-    "electron": "^43.2.0"
+    "electron": "^43.2.0",
+    "electron-builder": "^24.13.3"
   },
   "dependencies": {
     "adm-zip": "^0.6.0"
   },
   "allowScripts": {
     "electron@31.7.7": true
+  },
+  "build": {
+    "appId": "com.whityx.wzmm",
+    "productName": "WhyZenlessModManager",
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Utility"
+    },
+    "files": [
+      "**/*",
+      "!settings.json",
+      "!dowlinks.json",
+      "!.git/**/*",
+      "!dist/**/*"
+    ]
   }
 }
