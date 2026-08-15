@@ -117,32 +117,23 @@ function findProton(libs) {
 }
 
 module.exports = {
-  launch: (settings) => {
+  launch: (settings, t) => {
     const binPath = settings.xxmiBinPath;
     if (!binPath) {
-      showBanner(
-        "Ошибка запуска",
-        "Пожалуйста, укажите путь к папке bin XXMI в настройках!",
-      );
+      showBanner(t('start_err_title'), t('start_err_bin'));
       return;
     }
 
     const steamInfo = findSteamAndGame();
     if (!steamInfo || !steamInfo.gameExe) {
-      showBanner(
-        "Ошибка запуска",
-        "Установка Zenless Zone Zero (ZZZ) не найдена в библиотеках Steam.",
-      );
+      showBanner(t('start_err_title'), t('start_err_steam'));
       return;
     }
     const { steamDir, gameLib, gameExe, libs } = steamInfo;
 
     const protonBin = findProton(libs);
     if (!protonBin) {
-      showBanner(
-        "Ошибка запуска",
-        "Proton не найден. Пожалуйста, установите Proton через Steam.",
-      );
+      showBanner(t('start_err_title'), t('start_err_proton'));
       return;
     }
 
@@ -163,10 +154,7 @@ module.exports = {
     }
 
     if (!xxmiExe) {
-      showBanner(
-        "Ошибка запуска",
-        "Исполняемый .exe файл XXMI не найден по указанному пути.",
-      );
+      showBanner(t('start_err_title'), t('start_err_exe'));
       return;
     }
 
@@ -177,7 +165,7 @@ module.exports = {
       fs.mkdirSync(compatData, { recursive: true });
     }
 
-    showBanner("Подготовка", "Настраиваем префикс Proton и оверлей Steam...");
+    showBanner(t('start_prep_title'), t('start_prep_msg'));
 
     const env = Object.assign({}, process.env, {
       STEAM_COMPAT_DATA_PATH: compatData,
@@ -224,7 +212,7 @@ module.exports = {
       });
       child.unref();
 
-      showBanner("Запуск XXMI", "Лаунчер запущен. Ожидаем старт игры...");
+      showBanner(t('start_launch_title'), t('start_launch_msg'));
 
       let attempts = 0;
       const maxAttempts = 15;
@@ -235,7 +223,7 @@ module.exports = {
           execSync('pgrep -f "ZenlessZoneZero"');
 
           clearInterval(checkInterval);
-          showBanner("Успех!", "Игра обнаружена. Приятной игры!");
+          showBanner(t('start_success_title'), t('start_success_msg'));
 
           if (settings.minimizeTray) {
             ipcRenderer.send("minimize-to-tray");
@@ -243,15 +231,12 @@ module.exports = {
         } catch (e) {
           if (attempts >= maxAttempts) {
             clearInterval(checkInterval);
-            showBanner(
-              "Ожидание",
-              "Таймаут поиска игры истек, но вы можете продолжать играть.",
-            );
+            showBanner(t('start_wait_title'), t('start_wait_msg'));
           }
         }
       }, 2000);
     } catch (err) {
-      showBanner("Системная ошибка", `Произошла ошибка: ${err.message}`);
+      showBanner(t('start_sys_err_title'), t('start_sys_err_msg', { error: err.message }));
     }
   },
 };

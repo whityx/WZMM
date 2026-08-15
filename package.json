@@ -1,6 +1,6 @@
 {
   "name": "why-zenless-mod-manager",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "ZZZ Mod Manager for Linux",
   "main": "main.js",
   "scripts": {

@@ -2,11 +2,11 @@
 
 <div class="installed-page-container">
     <div class="page-header">
-        <h2>Локальная библиотека</h2>
+        <h2 data-i18n-text="installed_title">Локальная библиотека</h2>
         
         <div class="header-controls">
             <div class="search-wrapper">
-                <input type="text" id="mods-search" class="mods-search-input" placeholder="Найти мод...">
+                <input type="text" id="mods-search" class="mods-search-input" data-i18n-placeholder="installed_search_ph" placeholder="Найти мод...">
                 <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -16,9 +16,9 @@
             <div class="filter-container">
                 <div class="select-wrapper">
                     <select id="mods-filter" class="mods-filter-select">
-                        <option value="all">Все модификации</option>
-                        <option value="active">Только включенные</option>
-                        <option value="inactive">Только выключенные</option>
+                        <option value="all" data-i18n-text="installed_filter_all">Все модификации</option>
+                        <option value="active" data-i18n-text="installed_filter_active">Только включенные</option>
+                        <option value="inactive" data-i18n-text="installed_filter_inactive">Только выключенные</option>
                     </select>
                     <span class="select-arrow">▼</span>
                 </div>
@@ -26,7 +26,7 @@
         </div>
     </div>
     
-    <div id="mods-empty-state" style="display: none; margin-top: 30px; text-align: center; color: var(--text-muted); font-size: 1rem;">
+    <div id="mods-empty-state" style="display: none; margin-top: 30px; text-align: center; color: var(--text-muted); font-size: 1rem;" data-i18n-text="installed_empty">
         Библиотека пуста. Убедитесь, что пути в настройках указаны верно.
     </div>
 
@@ -39,7 +39,7 @@
             <h3 id="modal-title" class="modal-title">Название мода</h3>
             <div id="modal-status" class="modal-status"></div>
 
-            <a id="modal-source-link" class="modal-link" href="#" style="display: none; margin-bottom: 20px;">Открыть источник</a>
+            <a id="modal-source-link" class="modal-link" href="#" style="display: none; margin-bottom: 20px;" data-i18n-text="modal_source">Открыть источник</a>
             
             <div class="modal-scroll-area">
                 <div id="modal-image-container" class="modal-image-container"></div>

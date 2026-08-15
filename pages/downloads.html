@@ -3,7 +3,7 @@
     
     <div class="page-header">
         <div class="header-main-title">
-            <h2>Менеджер загрузок</h2>
+            <h2 data-i18n-text="dl_title">Менеджер загрузок</h2>
             <div class="downloads-summary">
                 <div class="summary-badge active">
                     <span class="dot"></span>
@@ -19,91 +19,21 @@
         <div class="header-controls">
             <div class="search-wrapper">
                 <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input type="text" class="mods-search-input" placeholder="Поиск по загрузкам...">
+                <input type="text" class="mods-search-input" data-i18n-placeholder="dl_search_ph" placeholder="Поиск по загрузкам...">
             </div>
 
-            <button class="btn-secondary" title="Поставить все на паузу">
+            <button class="btn-secondary" data-i18n-title="dl_btn_pause_all" title="Поставить все на паузу">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right:6px;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                Пауза для всех
+                <span data-i18n-text="dl_btn_pause_all">Пауза для всех</span>
             </button>
-            <button class="btn-refresh" title="Очистить список завершенных">
+            <button class="btn-refresh" data-i18n-title="dl_btn_clear" title="Очистить список завершенных">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Очистить
+                <span data-i18n-text="dl_btn_clear">Очистить</span>
             </button>
         </div>
     </div>
     
     <div id="downloads-list" class="downloads-list">
-        
-        <div class="download-card state-downloading">
-            <div class="download-preview" style="background-image: url('https://via.placeholder.com/120x80/1a1a24/fff');">
-                <div class="download-status-tag active">Скачивание</div>
-            </div>
-            
-            <div class="download-content">
-                <div class="download-header-row">
-                    <div class="download-title-block">
-                        <span class="download-name">TEST</span>
-                        <span class="download-subtext">Текстуры • 0.01 GB</span>
-                    </div>
-
-                    <div class="download-actions">
-                        <button class="action-btn pause" title="Пауза">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                        </button>
-                        <button class="action-btn stop" title="Остановить и отменить">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="progress-section">
-                    <div class="progress-bar-track">
-                        <div class="progress-bar-fill downloading-glow" style="width: 68%;"></div>
-                    </div>
-                </div>
-
-                <div class="download-footer-row">
-                    <span class="meta-speed">0 MB/с</span>
-                    <span class="meta-info">0.0 / 0.01 GB</span>
-                    <span class="meta-percent" style="color: var(--text-primary);">67%</span>
-                    <span class="meta-eta">Осталось: ~6.7 MIN</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="download-card state-paused">
-            <div class="download-preview" style="background-image: url('https://via.placeholder.com/120x80/1a1a24/fff');">
-                <div class="download-status-tag paused">Пауза</div>
-            </div>
-            <div class="download-content">
-                <div class="download-header-row">
-                    <div class="download-title-block">
-                        <span class="download-name">Test 2</span>
-                        <span class="download-subtext">Графика • 0 MB</span>
-                    </div>
-                    <div class="download-actions">
-                        <button class="action-btn resume" title="Возобновить">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        </button>
-                        <button class="action-btn stop" title="Остановить и отменить">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="progress-section">
-                    <div class="progress-bar-track">
-                        <div class="progress-bar-fill paused-glow" style="width: 42%;"></div>
-                    </div>
-                </div>
-                <div class="download-footer-row">
-                    <span class="meta-speed" style="color: var(--text-muted)">0 КБ/с</span>
-                    <span class="meta-info">0 MB / 1 MB</span>
-                    <span class="meta-percent" style="color: var(--text-primary);">42%</span>
-                    <span class="meta-eta">Приостановлено</span>
-                </div>
-            </div>
-        </div>
-
+        <!-- Контент генерируется скриптом -->
     </div>
 </div>

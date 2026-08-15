@@ -23,19 +23,70 @@ const modManager = new ModManager();
 
 const activeDownloads = {};
 
+// ===== Локализация =====
+let translations = {};
+const loadTranslations = (lang) => {
+  // Защита от старых неверных значений. По умолчанию теперь English ("en")
+  if (lang !== "ru" && lang !== "en") {
+    lang = "en";
+  }
+
+  // __dirname указывает на корень, где лежит index.html
+  let localePath = path.join(__dirname, "locales", `${lang}.json`);
+  
+  if (!fs.existsSync(localePath)) {
+    // Резервный вариант поиска (если пути Electron сдвинуты)
+    localePath = path.join(process.cwd(), "locales", `${lang}.json`);
+  }
+
+  try {
+    if (fs.existsSync(localePath)) {
+      translations = JSON.parse(fs.readFileSync(localePath, "utf-8"));
+    } else {
+      console.warn(`Файл локализации не найден: ${localePath}`);
+    }
+  } catch (e) {
+    console.error("Ошибка загрузки локализации", e);
+  }
+};
+
+const t = (key, params = {}) => {
+  let str = translations[key] || key;
+  for (const [k, v] of Object.entries(params)) {
+    str = str.replace(`{${k}}`, v);
+  }
+  return str;
+};
+
+const applyTranslationsToDOM = (container) => {
+  container.querySelectorAll("[data-i18n-text]").forEach(el => {
+    const key = el.getAttribute("data-i18n-text");
+    if (translations[key]) el.textContent = translations[key];
+  });
+  container.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    const key = el.getAttribute("data-i18n-placeholder");
+    if (translations[key]) el.placeholder = translations[key];
+  });
+  container.querySelectorAll("[data-i18n-title]").forEach(el => {
+    const key = el.getAttribute("data-i18n-title");
+    if (translations[key]) el.title = translations[key];
+  });
+};
+// =======================
+
 const timeAgo = (timestamp) => {
   if (!timestamp) return "N/A";
   const seconds = Math.floor(Date.now() / 1000 - parseInt(timestamp, 10));
-  if (seconds < 60) return `${Math.max(seconds, 0)}s`;
+  if (seconds < 60) return `${Math.max(seconds, 0)}${t('time_s')}`;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60) return `${minutes}${t('time_m')}`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return `${hours}${t('time_h')}`;
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d`;
+  if (days < 30) return `${days}${t('time_d')}`;
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo`;
-  return `${Math.floor(months / 12)}y`;
+  if (months < 12) return `${months}${t('time_mo')}`;
+  return `${Math.floor(months / 12)}${t('time_y')}`;
 };
 
 const abbreviateCount = (value) => {
@@ -96,6 +147,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const indicator = document.getElementById("sidebar-indicator");
 
   let currentSettings = getSettings();
+  // Загружаем язык (по умолчанию en)
+  loadTranslations(currentSettings.language || "en");
+  applyTranslationsToDOM(document.body);
+
   let currentModFilter = "all";
   let currentSearchQuery = "";
 
@@ -137,11 +192,11 @@ document.addEventListener("DOMContentLoaded", () => {
                             <line x1="12" y1="17" x2="12.01" y2="17"/>
                         </svg>
                     </div>
-                    <h3 class="modal-title">Подтверждение</h3>
+                    <h3 class="modal-title">${t('confirm_title')}</h3>
                     <p id="custom-confirm-msg" class="modal-text"></p>
                     <div class="confirm-actions">
-                        <button id="custom-confirm-cancel" class="btn-secondary">Отмена</button>
-                        <button id="custom-confirm-ok" class="btn-danger">Удалить навсегда</button>
+                        <button id="custom-confirm-cancel" class="btn-secondary">${t('confirm_cancel')}</button>
+                        <button id="custom-confirm-ok" class="btn-danger">${t('confirm_delete')}</button>
                     </div>
                 </div>
             `;
@@ -185,7 +240,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (html === undefined) {
         const response = await fetch(`pages/${pageName}.html`);
-        if (!response.ok) throw new Error("Страница не найдена");
+        if (!response.ok) throw new Error(t('err_page_load'));
         html = await response.text();
 
         const linkRegex = /<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/gi;
@@ -219,18 +274,22 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       contentContainer.innerHTML = html;
+      
+      // Сразу переводим контент вставленной страницы
+      applyTranslationsToDOM(contentContainer);
 
       if (pageName === "settings") initSettings();
       if (pageName === "installed") initInstalledMods();
       if (pageName === "download") initGameBananaCatalog();
       if (pageName === "downloads") initDownloadsTab();
     } catch (error) {
-      contentContainer.innerHTML = `<h2 style="color: var(--color-red);">Ошибка загрузки страницы</h2>`;
+      contentContainer.innerHTML = `<h2 style="color: var(--color-red);">${t('err_page_load')}</h2>`;
     }
   };
 
   function getSettings() {
-    const defaultSettings = { nsfwMode: "show" };
+    // По умолчанию язык теперь английский
+    const defaultSettings = { nsfwMode: "show", language: "en" };
 
     if (!fs.existsSync(settingsFilePath)) {
       fs.writeFileSync(
@@ -241,7 +300,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     try {
-      return JSON.parse(fs.readFileSync(settingsFilePath, "utf-8"));
+      let settings = JSON.parse(fs.readFileSync(settingsFilePath, "utf-8"));
+      
+      // Защита: если сохранен мусор, сбрасываем на 'en'
+      if (settings.language !== "ru" && settings.language !== "en") {
+        settings.language = "en";
+      }
+      
+      return settings;
     } catch (e) {
       fs.writeFileSync(
         settingsFilePath,
@@ -286,15 +352,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!validPath || totalCount === 0) {
       grid.innerHTML = "";
-      emptyState.textContent =
-        "Моды не найдены. Убедитесь, что название введено верно или указан правильный путь в настройках.";
+      emptyState.textContent = t('mods_not_found');
       emptyState.style.display = "block";
       return;
     }
 
     if (mods.length === 0) {
       grid.innerHTML = "";
-      emptyState.textContent = "По этому фильтру ничего не найдено.";
+      emptyState.textContent = t('mods_filter_empty');
       emptyState.style.display = "block";
       return;
     }
@@ -310,7 +375,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const iconActive = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`;
       const iconInactive = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.83 9L15 12.16V12a3 3 0 0 0-3-3h-.17zm-4.3.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`;
-      const iconDelete = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+      const iconDelete = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
 
       let bgStyle = "";
       if (mod.previewUrl) {
@@ -322,16 +387,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
       card.innerHTML = `
                 <div class="mod-preview" style="${bgStyle} cursor: pointer;">
-                    ${mod.previewUrl ? "" : '<div class="mod-placeholder">Нет<br>фото</div>'}
+                    ${mod.previewUrl ? "" : `<div class="mod-placeholder">${t('mod_no_photo')}</div>`}
                 </div>
                 <div class="mod-footer">
-                    <button class="mod-toggle-btn ${mod.active ? "active" : ""}" title="${mod.active ? "Выключить" : "Включить"}">
+                    <button class="mod-toggle-btn ${mod.active ? "active" : ""}" title="${mod.active ? t('mod_turn_off') : t('mod_turn_on')}">
                         ${mod.active ? iconActive : iconInactive}
                     </button>
                     <div class="mod-name-container">
                         <div class="mod-name" title="${mod.name}">${mod.name}</div>
                     </div>
-                    <button class="mod-delete-btn" title="Удалить мод навсегда">
+                    <button class="mod-delete-btn" title="${t('mod_delete_forever')}">
                         ${iconDelete}
                     </button>
                 </div>
@@ -359,13 +424,11 @@ document.addEventListener("DOMContentLoaded", () => {
             card.style.animation = "none";
             card.style.setProperty("--card-opacity", mod.active ? "1" : "0.6");
             toggleBtn.className = `mod-toggle-btn ${mod.active ? "active" : ""}`;
-            toggleBtn.title = mod.active ? "Выключить" : "Включить";
+            toggleBtn.title = mod.active ? t('mod_turn_off') : t('mod_turn_on');
             toggleBtn.innerHTML = mod.active ? iconActive : iconInactive;
           }
         } else
-          alert(
-            "Ошибка при перемещении мода. Проверьте права доступа или закрыта ли игра.",
-          );
+          alert(t('mod_move_err'));
       });
 
       const deleteBtn = card.querySelector(".mod-delete-btn");
@@ -373,7 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
         e.stopPropagation();
 
         customConfirm(
-          `Вы действительно хотите навсегда удалить мод "${mod.name}" с вашего диска?`,
+          t('mod_delete_confirm', { name: mod.name }),
           () => {
             const deleted = modManager.deleteMod(
               currentSettings.xxmiPath,
@@ -383,9 +446,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (deleted) {
               renderModsGrid();
             } else {
-              alert(
-                "Не удалось удалить папку мода. Возможно, файлы открыты в другой программе.",
-              );
+              alert(t('mod_delete_err'));
             }
           },
         );
@@ -400,8 +461,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!modal) return;
     document.getElementById("modal-title").textContent = mod.name;
     document.getElementById("modal-status").textContent = mod.active
-      ? "Состояние: Включен"
-      : "Состояние: Выключен";
+      ? t('mod_status_on')
+      : t('mod_status_off');
     document.getElementById("modal-status").style.color = mod.active
       ? "#4CAF50"
       : "#f44336";
@@ -427,7 +488,7 @@ document.addEventListener("DOMContentLoaded", () => {
         .replace(/"/g, "%22");
       imgContainer.innerHTML = `<img src="${safeUrl}" alt="${mod.name}">`;
     } else
-      imgContainer.innerHTML = `<div style="padding: 40px; background: rgba(255,255,255,0.05); border-radius: 8px; color: var(--color-muted);">Изображение отсутствует</div>`;
+      imgContainer.innerHTML = `<div style="padding: 40px; background: rgba(255,255,255,0.05); border-radius: 8px; color: var(--color-muted);">${t('mod_no_image')}</div>`;
 
     const desc = document.getElementById("modal-description");
     if (mod.description) {
@@ -506,7 +567,7 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (err) {
         if (!append)
           grid.innerHTML =
-            '<div style="color: var(--color-red); grid-column: 1 / -1; text-align: center; margin-top: 20px;">Ошибка загрузки. Попробуйте обновить.</div>';
+            `<div style="color: var(--color-red); grid-column: 1 / -1; text-align: center; margin-top: 20px;">${t('gb_load_err')}</div>`;
       } finally {
         gbLoading = false;
         if (loadingEl) loadingEl.style.display = "none";
@@ -599,7 +660,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!append && records.length === 0) {
       grid.innerHTML =
-        '<div style="color: var(--color-muted); grid-column: 1 / -1; text-align: center; margin-top: 40px;">По вашему запросу ничего не найдено.</div>';
+        `<div style="color: var(--color-muted); grid-column: 1 / -1; text-align: center; margin-top: 40px;">${t('gb_search_empty')}</div>`;
       return;
     }
 
@@ -664,16 +725,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
       let btnClass = "";
       let btnIcon = iconDownload;
-      let btnTitle = "Скачать";
+      let btnTitle = t('gb_download');
 
       if (isDownloaded) {
         btnClass = "downloaded";
         btnIcon = iconDownloaded;
-        btnTitle = "Уже скачано";
+        btnTitle = t('gb_already_dl');
       } else if (isDownloading) {
         btnClass = "downloading";
         btnIcon = iconDownloading;
-        btnTitle = "Скачивается...";
+        btnTitle = t('gb_downloading');
       }
 
       const rawLikes = mod._nLikeCount ?? mod.LikeCount ?? mod.nLikeCount ?? 0;
@@ -696,9 +757,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="mod-name-container">
                         <div class="mod-name" title="${mod._sName}">${mod._sName}</div>
                         <div class="mod-stats">
-                            <span title="Лайки"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg> ${likes}</span>
-                            <span id="dl-count-${mod._idRow}" title="Скачивания"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> ...</span>
-                            <span title="Обновлено"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> ${timeAgoStr}</span>
+                            <span title="${t('gb_likes')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg> ${likes}</span>
+                            <span id="dl-count-${mod._idRow}" title="${t('gb_downloads')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> ...</span>
+                            <span title="${t('gb_updated')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> ${timeAgoStr}</span>
                         </div>
                     </div>
                 </div>
@@ -784,7 +845,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const itemData = await dataRes.json();
 
       document.getElementById("gb-modal-desc").innerHTML =
-        itemData[0] || "Описание отсутствует.";
+        itemData[0] || t('gb_desc_empty');
       const filesObj = itemData[1];
       document.getElementById("gb-files-loading").style.display = "none";
 
@@ -793,8 +854,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const msg = document.createElement("div");
           msg.style.cssText =
             "padding:12px; background:rgba(255,42,42,0.1); border:1px solid var(--color-red); border-radius:8px; color:var(--color-red); margin-bottom:12px; font-size:0.9rem; font-weight:600;";
-          msg.textContent =
-            "Вы уже скачивали этот мод. Здесь вы можете скачать другой файл или обновить его.";
+          msg.textContent = t('gb_already_dl_msg');
           document.getElementById("gb-files-list").appendChild(msg);
         }
 
@@ -811,10 +871,10 @@ document.addEventListener("DOMContentLoaded", () => {
           fDiv.innerHTML = `
                         <strong>${file._sFile}</strong>
                         <div style="margin-bottom: 8px; font-size: 0.85rem; color: var(--color-muted);">
-                            Добавлено: ${new Date(file._tsDateAdded * 1000).toLocaleDateString()} &bull; ${(file._nFilesize / 1024 / 1024).toFixed(2)} MB
+                            ${t('gb_added')}: ${new Date(file._tsDateAdded * 1000).toLocaleDateString()} &bull; ${(file._nFilesize / 1024 / 1024).toFixed(2)} MB
                         </div>
                         <button class="btn-install" ${isFileDownloading ? 'disabled style="background:#3f3f46; cursor:not-allowed;"' : ""}>
-                            ${isFileDownloading ? "Скачивается..." : "Установить"}
+                            ${isFileDownloading ? t('gb_downloading') : t('gb_install')}
                         </button>
                     `;
           fDiv.querySelector(".btn-install").onclick = () => {
@@ -827,11 +887,10 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       } else {
         document.getElementById("gb-files-list").innerHTML =
-          '<div style="color:var(--color-muted);">Файлы недоступны.</div>';
+          `<div style="color:var(--color-muted);">${t('gb_files_unavail')}</div>`;
       }
     } catch (e) {
-      document.getElementById("gb-files-loading").textContent =
-        "Не удалось загрузить файлы.";
+      document.getElementById("gb-files-loading").textContent = t('gb_files_fail');
     }
 
     const closeBtn = document.getElementById("gb-modal-close");
@@ -857,7 +916,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const xxmiPath = currentSettings.xxmiPath;
     if (!xxmiPath) {
-      alert('Сначала укажите путь к папке XXMI во вкладке "Настройки"!');
+      alert(t('dl_need_path'));
       return;
     }
 
@@ -867,7 +926,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const targetModFolder = path.join(xxmiPath, "Mods", safeModFolder);
 
     if (activeDownloads[downloadId]) {
-      alert("Этот файл уже находится в очереди загрузки!");
+      alert(t('dl_in_queue'));
       return;
     }
 
@@ -879,7 +938,7 @@ document.addEventListener("DOMContentLoaded", () => {
       progress: 0,
       total: 0,
       speed: 0,
-      status: "Подключение...",
+      status: t('dl_connecting'),
       req: null,
     };
 
@@ -966,7 +1025,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     downloadPromise
       .then(() => {
-        activeDownloads[downloadId].status = "Распаковка архива...";
+        activeDownloads[downloadId].status = t('dl_unpacking');
         setTimeout(async () => {
           try {
             if (tempPath.toLowerCase().endsWith(".zip") && AdmZip) {
@@ -992,12 +1051,12 @@ document.addEventListener("DOMContentLoaded", () => {
             delete activeDownloads[downloadId];
             renderDownloadsTab();
           } catch (e) {
-            activeDownloads[downloadId].status = "Ошибка распаковки.";
+            activeDownloads[downloadId].status = t('dl_unpack_err');
           }
         }, 500);
       })
       .catch((err) => {
-        activeDownloads[downloadId].status = "Сбой загрузки: " + err.message;
+        activeDownloads[downloadId].status = t('dl_fail', { error: err.message });
       });
   };
 
@@ -1020,13 +1079,13 @@ document.addEventListener("DOMContentLoaded", () => {
       totalSpeedBytes += activeDownloads[k].speed || 0;
     });
 
-    if (activeBadge) activeBadge.textContent = `${keys.length} активных`;
+    if (activeBadge) activeBadge.textContent = t('dl_active_count', { count: keys.length });
     if (speedBadge)
-      speedBadge.textContent = `${(totalSpeedBytes / 1024 / 1024).toFixed(1)} МБ/с`;
+      speedBadge.textContent = t('dl_speed_mb', { speed: (totalSpeedBytes / 1024 / 1024).toFixed(1) });
 
     if (keys.length === 0) {
       list.innerHTML =
-        '<div class="empty-state" style="color: var(--color-muted); text-align: center; padding: 40px 0;">В данный момент ничего не загружается.</div>';
+        `<div class="empty-state" style="color: var(--color-muted); text-align: center; padding: 40px 0;">${t('dl_empty_state')}</div>`;
       return;
     }
 
@@ -1061,7 +1120,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         card.innerHTML = `
                     <div class="download-preview" style="${bgStyle}">
-                        <div class="download-status-tag active">Скачивание</div>
+                        <div class="download-status-tag active">${t('dl_status_downloading')}</div>
                     </div>
                     
                     <div class="download-content">
@@ -1072,7 +1131,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             </div>
 
                             <div class="download-actions">
-                                <button class="action-btn stop btn-cancel" title="Остановить и отменить" data-id="${key}">
+                                <button class="action-btn stop btn-cancel" title="${t('dl_action_stop')}" data-id="${key}">
                                     <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
                                 </button>
                             </div>
@@ -1129,6 +1188,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnSelectXxmiBin = document.getElementById("btn-select-xxmi-bin");
 
     const nsfwModeSelect = document.getElementById("setting-nsfw-mode");
+    const langSelect = document.getElementById("language-selector");
 
     if (currentSettings.xxmiPath)
       xxmiPathInput.value = currentSettings.xxmiPath;
@@ -1137,6 +1197,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (nsfwModeSelect)
       nsfwModeSelect.value = currentSettings.nsfwMode || "show";
+    
+    if (langSelect) {
+      langSelect.value = currentSettings.language || "en";
+    }
 
     const saveSettings = () => {
       currentSettings = {
@@ -1147,6 +1211,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ? xxmiBinPathInput.value
           : currentSettings.xxmiBinPath || "",
         nsfwMode: nsfwModeSelect ? nsfwModeSelect.value : "show",
+        language: langSelect ? langSelect.value : (currentSettings.language || "en"),
       };
       fs.writeFileSync(
         settingsFilePath,
@@ -1155,6 +1220,24 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     if (nsfwModeSelect) nsfwModeSelect.addEventListener("change", saveSettings);
+
+if (langSelect) {
+      langSelect.addEventListener("change", (e) => {
+        saveSettings();
+        loadTranslations(currentSettings.language);
+        applyTranslationsToDOM(document.body);
+        loadPage("settings"); // Перезагружаем страницу настроек
+        
+        // --- ИСПРАВЛЕНИЕ ОБВОДКИ ---
+        // Даем браузеру немного времени (50мс) на отрисовку новых шрифтов и ширины, 
+        // после чего заставляем ползунок пересчитать свои размеры и позицию.
+        setTimeout(() => {
+          const activeItem = document.querySelector(".sidebar-item.active");
+          if (activeItem) moveIndicator(activeItem);
+        }, 50);
+        // ---------------------------
+      });
+    }
 
     if (xxmiPathInput) xxmiPathInput.addEventListener("input", saveSettings);
     if (xxmiBinPathInput)
@@ -1218,7 +1301,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btn-launch-game").addEventListener("click", () => {
-    startOpt.launch(currentSettings);
+    startOpt.launch(currentSettings, t);
   });
 
   loadPage("installed").then(() => {
