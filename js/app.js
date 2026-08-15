@@ -23,19 +23,15 @@ const modManager = new ModManager();
 
 const activeDownloads = {};
 
-// ===== Локализация =====
 let translations = {};
 const loadTranslations = (lang) => {
-  // Защита от старых неверных значений. По умолчанию теперь English ("en")
   if (lang !== "ru" && lang !== "en") {
     lang = "en";
   }
 
-  // __dirname указывает на корень, где лежит index.html
   let localePath = path.join(__dirname, "locales", `${lang}.json`);
   
   if (!fs.existsSync(localePath)) {
-    // Резервный вариант поиска (если пути Electron сдвинуты)
     localePath = path.join(process.cwd(), "locales", `${lang}.json`);
   }
 
@@ -72,7 +68,6 @@ const applyTranslationsToDOM = (container) => {
     if (translations[key]) el.title = translations[key];
   });
 };
-// =======================
 
 const timeAgo = (timestamp) => {
   if (!timestamp) return "N/A";
@@ -147,7 +142,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const indicator = document.getElementById("sidebar-indicator");
 
   let currentSettings = getSettings();
-  // Загружаем язык (по умолчанию en)
   loadTranslations(currentSettings.language || "en");
   applyTranslationsToDOM(document.body);
 
@@ -275,7 +269,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       contentContainer.innerHTML = html;
       
-      // Сразу переводим контент вставленной страницы
       applyTranslationsToDOM(contentContainer);
 
       if (pageName === "settings") initSettings();
@@ -288,7 +281,6 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   function getSettings() {
-    // По умолчанию язык теперь английский
     const defaultSettings = { nsfwMode: "show", language: "en" };
 
     if (!fs.existsSync(settingsFilePath)) {
@@ -302,7 +294,6 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       let settings = JSON.parse(fs.readFileSync(settingsFilePath, "utf-8"));
       
-      // Защита: если сохранен мусор, сбрасываем на 'en'
       if (settings.language !== "ru" && settings.language !== "en") {
         settings.language = "en";
       }
@@ -1226,16 +1217,12 @@ if (langSelect) {
         saveSettings();
         loadTranslations(currentSettings.language);
         applyTranslationsToDOM(document.body);
-        loadPage("settings"); // Перезагружаем страницу настроек
+        loadPage("settings");
         
-        // --- ИСПРАВЛЕНИЕ ОБВОДКИ ---
-        // Даем браузеру немного времени (50мс) на отрисовку новых шрифтов и ширины, 
-        // после чего заставляем ползунок пересчитать свои размеры и позицию.
         setTimeout(() => {
           const activeItem = document.querySelector(".sidebar-item.active");
           if (activeItem) moveIndicator(activeItem);
         }, 50);
-        // ---------------------------
       });
     }
 
