@@ -1,0 +1,70 @@
+<link rel="stylesheet" href="css/download.css">
+
+<div class="installed-page-container">
+    <div class="page-header">
+        <h2>Каталог GameBanana</h2>
+        
+        <div class="header-controls">
+            <div class="search-wrapper">
+                <input type="text" id="gb-search" class="mods-search-input" placeholder="Искать моды...">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+            </div>
+
+            <div class="filter-container">
+                <div class="select-wrapper">
+                    <select id="gb-sort" class="mods-filter-select">
+                        <option value="default">Лучшие / Популярные</option>
+                        <option value="new">Самые новые</option>
+                        <option value="updated">Недавно обновленные</option>
+                        <option value="downloads">По скачиваниям</option>
+                        <option value="views">По просмотрам</option>
+                        <option value="likes">По лайкам</option>
+                    </select>
+                    <span class="select-arrow">▼</span>
+                </div>
+            </div>
+            
+            <button id="gb-refresh-btn" class="btn-refresh">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                Обновить
+            </button>
+        </div>
+    </div>
+    
+    <div id="gb-loading" style="display: none; color: var(--text-muted); text-align: center; margin-top: 10px; font-weight: 500;">
+        Подключение к базе данных...
+    </div>
+
+    <div id="gb-grid" class="mods-grid"></div>
+
+    <div id="gb-modal" class="modal-overlay">
+        <div class="modal-content gb-modal-content">
+            <span class="modal-close" id="gb-modal-close" title="Закрыть">&times;</span>
+            
+            <h3 id="gb-modal-title" class="modal-title">Название мода</h3>
+            <a id="gb-modal-link" class="modal-link" href="#" style="margin-bottom: 20px; display:inline-block;">Открыть в браузере</a>
+            
+            <div class="gb-modal-layout">
+                <div class="gb-modal-left">
+                    <div class="carousel-container">
+                        <button class="carousel-btn prev-btn" id="gb-carousel-prev">&lt;</button>
+                        <div class="carousel-image-wrapper">
+                            <img id="gb-modal-img" src="" alt="" style="display: none;">
+                        </div>
+                        <button class="carousel-btn next-btn" id="gb-carousel-next">&gt;</button>
+                    </div>
+                    <div id="gb-modal-desc" class="modal-text"></div>
+                </div>
+                
+                <div class="gb-modal-right">
+                    <h4 style="margin-bottom: 12px; font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">Доступные архивы</h4>
+                    <div id="gb-files-loading" style="display: none; color: var(--text-muted); font-size: 0.85rem;">Получение файлов...</div>
+                    <div id="gb-files-list" class="gb-files-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
