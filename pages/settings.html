@@ -1,0 +1,43 @@
+<div class="page-header">
+    <h2 data-i18n-text="settings_title">Настройки приложения</h2>
+</div>
+
+<div class="input-group">
+    <div class="input-label" data-i18n-text="settings_xxmi_path">Путь к ZZMI</div>
+    <div class="input-row">
+        <input type="text" id="setting-xxmi-path" class="text-input" placeholder="Например: /home/XXMI/ZZMI/">
+        <button id="btn-select-xxmi" class="btn-secondary" data-i18n-text="settings_browse">Обзор</button>
+    </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="input-group">
+    <div class="input-label" data-i18n-text="settings_bin_path">Путь к bin</div>
+    <div class="input-row">
+        <input type="text" id="setting-xxmi-bin-path" class="text-input" placeholder="Например: /home/XXMI/Resources/Bin/">
+        <button id="btn-select-xxmi-bin" class="btn-secondary" data-i18n-text="settings_browse">Обзор</button>
+    </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="toggle-row">
+    <div class="toggle-label" data-i18n-text="settings_lang">Язык | Language</div>
+    <div class="select-wrapper">
+        <select id="language-selector" class="mods-filter-select" style="background: transparent; border: 1px solid var(--border-subtle); outline: none; color: var(--text-primary); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 0.85rem;">
+            <option style="background:var(--bg-main);" value="ru">Русский</option>
+            <option style="background:var(--bg-main);" value="en">English</option>
+        </select>
+    </div>
+</div>
+<div class="toggle-row">
+    <div class="toggle-label" data-i18n-text="settings_nsfw">Фильтр контента (18+)</div>
+    <div class="select-wrapper">
+        <select id="setting-nsfw-mode" class="mods-filter-select" style="background: transparent; border: 1px solid var(--border-subtle); outline: none; color: var(--text-primary); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 0.85rem;">
+            <option style="background:var(--bg-main);" value="show" data-i18n-text="settings_nsfw_show">Показывать всё</option>
+            <option style="background:var(--bg-main);" value="blur" data-i18n-text="settings_nsfw_blur">Размытие (Blur)</option>
+            <option style="background:var(--bg-main);" value="hide" data-i18n-text="settings_nsfw_hide">Скрывать полностью</option>
+        </select>
+    </div>
+</div>
