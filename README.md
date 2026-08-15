@@ -1,7 +1,7 @@
 [English 🇺🇲](README.md) | [Русский 🇷🇺](README.ru.md)
 
 <p align="center">
-  <img src="icons/why-zenless-mod-manager.png" alt="WZMM Logo" width="512" height="512" />
+  <img src="icons/why-zenless-mod-manager.png" alt="WZMM Logo" width="256" height="256" />
 </p>
 
 <h1 align="center">WZMM</h1>
