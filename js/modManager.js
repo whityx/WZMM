@@ -1,29 +1,31 @@
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 class ModManager {
-  constructor(settingsPath) {
-    this.settingsPath = settingsPath;
-    this.dowlinksPath = path.join(path.dirname(settingsPath), "dowlinks.json");
-  }
-
-  getXxmiPath() {
-    if (fs.existsSync(this.settingsPath)) {
-      try {
-        const settings = JSON.parse(
-          fs.readFileSync(this.settingsPath, "utf-8"),
-        );
-        return settings.xxmiPath || null;
-      } catch (e) {
-        console.error("Ошибка чтения settings.json", e);
-      }
+  constructor() {
+    const configDir = path.join(os.homedir(), ".config", "wzmm");
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
     }
-    return null;
+    this.dowlinksPath = path.join(configDir, "dowlinks.json");
   }
 
-  getMods(filter = "all", searchQuery = "") {
-    const xxmiPath = this.getXxmiPath();
+  getDowlinks() {
+    if (!fs.existsSync(this.dowlinksPath)) {
+      fs.writeFileSync(this.dowlinksPath, JSON.stringify({}, null, 4), "utf-8");
+      return {};
+    }
+    try {
+      return JSON.parse(fs.readFileSync(this.dowlinksPath, "utf-8"));
+    } catch (e) {
+      console.error("Ошибка чтения dowlinks.json, файл будет сброшен", e);
+      fs.writeFileSync(this.dowlinksPath, JSON.stringify({}, null, 4), "utf-8");
+      return {};
+    }
+  }
 
+  getMods(xxmiPath, filter = "all", searchQuery = "") {
     if (!xxmiPath || !fs.existsSync(xxmiPath)) {
       return { validPath: false, totalCount: 0, mods: [] };
     }
@@ -36,14 +38,9 @@ class ModManager {
       fs.mkdirSync(dismodsDir, { recursive: true });
 
     let dowlinksLower = {};
-
-    if (fs.existsSync(this.dowlinksPath)) {
-      try {
-        const parsed = JSON.parse(fs.readFileSync(this.dowlinksPath, "utf-8"));
-        for (const [key, value] of Object.entries(parsed)) {
-          dowlinksLower[key.trim().toLowerCase()] = value;
-        }
-      } catch (e) {}
+    const parsedDowlinks = this.getDowlinks();
+    for (const [key, value] of Object.entries(parsedDowlinks)) {
+      dowlinksLower[key.trim().toLowerCase()] = value;
     }
 
     const modsList = [];
@@ -101,8 +98,7 @@ class ModManager {
     return { validPath: true, totalCount, mods: modsList };
   }
 
-  toggleMod(modName, currentState) {
-    const xxmiPath = this.getXxmiPath();
+  toggleMod(xxmiPath, modName, currentState) {
     if (!xxmiPath) return false;
 
     const sourceDir = currentState
@@ -126,8 +122,7 @@ class ModManager {
     return false;
   }
 
-  deleteMod(modName, currentState) {
-    const xxmiPath = this.getXxmiPath();
+  deleteMod(xxmiPath, modName, currentState) {
     if (!xxmiPath) return false;
 
     const targetDir = path.join(
@@ -147,18 +142,15 @@ class ModManager {
     return false;
   }
 
-  isModDownloaded(modId) {
-    if (!fs.existsSync(this.dowlinksPath)) return false;
+  isModDownloaded(xxmiPath, modId) {
     try {
-      const dowlinks = JSON.parse(fs.readFileSync(this.dowlinksPath, "utf-8"));
+      const dowlinks = this.getDowlinks();
       const urlToCheck = `https://gamebanana.com/mods/${modId}`;
       const downloadedFolders = Object.keys(dowlinks).filter(
         (key) => dowlinks[key] === urlToCheck,
       );
 
       if (downloadedFolders.length === 0) return false;
-
-      const xxmiPath = this.getXxmiPath();
       if (!xxmiPath) return false;
 
       for (const folder of downloadedFolders) {
@@ -176,14 +168,9 @@ class ModManager {
   }
 
   addDownloadLink(modName, url) {
-    let dowlinks = {};
-    if (fs.existsSync(this.dowlinksPath)) {
-      try {
-        dowlinks = JSON.parse(fs.readFileSync(this.dowlinksPath, "utf-8"));
-      } catch (e) {}
-    }
-    dowlinks[modName] = url;
     try {
+      let dowlinks = this.getDowlinks();
+      dowlinks[modName] = url;
       fs.writeFileSync(this.dowlinksPath, JSON.stringify(dowlinks, null, 4));
       return true;
     } catch (e) {

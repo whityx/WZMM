@@ -2,6 +2,8 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electr
 const path = require('path');
 const fs = require('fs');
 
+app.setDesktopName('why-zenless-mod-manager');
+
 let mainWindow = null;
 let tray = null;
 let isQuiting = false;
@@ -10,6 +12,7 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1000,
         height: 700,
+        autoHideMenuBar: true,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,

@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { shell, webUtils } = require("electron");
 const https = require("https");
 const http = require("http");
@@ -9,10 +10,16 @@ try {
   AdmZip = require("adm-zip");
 } catch (e) {}
 
+const configDir = path.join(os.homedir(), ".config", "wzmm");
+if (!fs.existsSync(configDir)) {
+  fs.mkdirSync(configDir, { recursive: true });
+}
+
+const settingsFilePath = path.join(configDir, "settings.json");
+
 const ModManager = require(path.join(__dirname, "js", "modManager.js"));
 const startOpt = require(path.join(__dirname, "js", "startopt.js"));
-const settingsFilePath = path.join(__dirname, "settings.json");
-const modManager = new ModManager(settingsFilePath);
+const modManager = new ModManager();
 
 const activeDownloads = {};
 
@@ -223,12 +230,26 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   function getSettings() {
-    if (fs.existsSync(settingsFilePath)) {
-      try {
-        return JSON.parse(fs.readFileSync(settingsFilePath, "utf-8"));
-      } catch (e) {}
+    const defaultSettings = { nsfwMode: "show" };
+
+    if (!fs.existsSync(settingsFilePath)) {
+      fs.writeFileSync(
+        settingsFilePath,
+        JSON.stringify(defaultSettings, null, 4),
+        "utf-8",
+      );
     }
-    return { nsfwMode: "show" };
+
+    try {
+      return JSON.parse(fs.readFileSync(settingsFilePath, "utf-8"));
+    } catch (e) {
+      fs.writeFileSync(
+        settingsFilePath,
+        JSON.stringify(defaultSettings, null, 4),
+        "utf-8",
+      );
+      return defaultSettings;
+    }
   }
 
   const initInstalledMods = () => {
@@ -258,6 +279,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!grid || !emptyState) return;
 
     const { validPath, totalCount, mods } = modManager.getMods(
+      currentSettings.xxmiPath,
       currentModFilter,
       currentSearchQuery,
     );
@@ -322,7 +344,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const toggleBtn = card.querySelector(".mod-toggle-btn");
       toggleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const success = modManager.toggleMod(mod.name, mod.active);
+        const success = modManager.toggleMod(
+          currentSettings.xxmiPath,
+          mod.name,
+          mod.active,
+        );
         if (success) {
           mod.active = !mod.active;
           const shouldBeRemoved =
@@ -349,7 +375,11 @@ document.addEventListener("DOMContentLoaded", () => {
         customConfirm(
           `Вы действительно хотите навсегда удалить мод "${mod.name}" с вашего диска?`,
           () => {
-            const deleted = modManager.deleteMod(mod.name, mod.active);
+            const deleted = modManager.deleteMod(
+              currentSettings.xxmiPath,
+              mod.name,
+              mod.active,
+            );
             if (deleted) {
               renderModsGrid();
             } else {
@@ -620,7 +650,10 @@ document.addEventListener("DOMContentLoaded", () => {
           ? `<div class="nsfw-badge">18+</div>`
           : "";
 
-      const isDownloaded = modManager.isModDownloaded(mod._idRow);
+      const isDownloaded = modManager.isModDownloaded(
+        currentSettings.xxmiPath,
+        mod._idRow,
+      );
       const isDownloading = Object.values(activeDownloads).some(
         (d) => d.modId === mod._idRow.toString(),
       );
@@ -756,7 +789,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("gb-files-loading").style.display = "none";
 
       if (filesObj && Object.keys(filesObj).length > 0) {
-        if (modManager.isModDownloaded(mod._idRow)) {
+        if (modManager.isModDownloaded(currentSettings.xxmiPath, mod._idRow)) {
           const msg = document.createElement("div");
           msg.style.cssText =
             "padding:12px; background:rgba(255,42,42,0.1); border:1px solid var(--color-red); border-radius:8px; color:var(--color-red); margin-bottom:12px; font-size:0.9rem; font-weight:600;";
@@ -822,7 +855,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const fileName = gbFile._sFile;
     const downloadId = gbFile._idRow.toString();
 
-    const xxmiPath = modManager.getXxmiPath();
+    const xxmiPath = currentSettings.xxmiPath;
     if (!xxmiPath) {
       alert('Сначала укажите путь к папке XXMI во вкладке "Настройки"!');
       return;
@@ -1095,10 +1128,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const xxmiBinPathInput = document.getElementById("setting-xxmi-bin-path");
     const btnSelectXxmiBin = document.getElementById("btn-select-xxmi-bin");
 
-    const autoUpdateCheckbox = document.getElementById("setting-auto-update");
-    const minimizeTrayCheckbox = document.getElementById(
-      "setting-minimize-tray",
-    );
     const nsfwModeSelect = document.getElementById("setting-nsfw-mode");
 
     if (currentSettings.xxmiPath)
@@ -1106,10 +1135,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (currentSettings.xxmiBinPath && xxmiBinPathInput)
       xxmiBinPathInput.value = currentSettings.xxmiBinPath;
 
-    if (autoUpdateCheckbox)
-      autoUpdateCheckbox.checked = currentSettings.autoUpdate || false;
-    if (minimizeTrayCheckbox)
-      minimizeTrayCheckbox.checked = currentSettings.minimizeTray || false;
     if (nsfwModeSelect)
       nsfwModeSelect.value = currentSettings.nsfwMode || "show";
 
@@ -1121,10 +1146,6 @@ document.addEventListener("DOMContentLoaded", () => {
         xxmiBinPath: xxmiBinPathInput
           ? xxmiBinPathInput.value
           : currentSettings.xxmiBinPath || "",
-        autoUpdate: autoUpdateCheckbox ? autoUpdateCheckbox.checked : false,
-        minimizeTray: minimizeTrayCheckbox
-          ? minimizeTrayCheckbox.checked
-          : false,
         nsfwMode: nsfwModeSelect ? nsfwModeSelect.value : "show",
       };
       fs.writeFileSync(
@@ -1133,10 +1154,6 @@ document.addEventListener("DOMContentLoaded", () => {
       );
     };
 
-    if (autoUpdateCheckbox)
-      autoUpdateCheckbox.addEventListener("change", saveSettings);
-    if (minimizeTrayCheckbox)
-      minimizeTrayCheckbox.addEventListener("change", saveSettings);
     if (nsfwModeSelect) nsfwModeSelect.addEventListener("change", saveSettings);
 
     if (xxmiPathInput) xxmiPathInput.addEventListener("input", saveSettings);
