@@ -68,6 +68,7 @@
   "start_sys_err_msg": "An error occurred: {error}",
   
   "settings_title": "Application Settings",
+  "settings_theme": "Theme",
   "settings_xxmi_path": "Path to ZZMI",
   "settings_bin_path": "Path to bin",
   "settings_browse": "Browse",
@@ -108,5 +109,27 @@
   "nav_download": "Get Mods",
   "nav_downloads": "Downloads",
   "nav_settings": "Settings",
-  "nav_launch_game": "Launch Game"
+  "nav_launch_game": "Launch Game",
+
+  "installed_groups_btn": "Manage Groups",
+  "groups_title": "Mod Groups",
+  "groups_create_title": "Create Group",
+  "groups_edit_title": "Edit Group",
+  "groups_name_ph": "Group name...",
+  "groups_create_btn": "Create Group",
+  "groups_save_btn": "Save Changes",
+  "groups_cancel_btn": "Cancel",
+  "groups_selected_count": "Selected mods: {count}",
+  "groups_select_all": "Select all",
+  "groups_deselect_all": "Clear selection",
+  "groups_list_title": "Existing Groups",
+  "groups_empty": "No groups yet. Select mods on the left and create your first group!",
+  "groups_apply_btn": "Apply",
+  "groups_delete_confirm": "Delete group \"{name}\"?",
+  "groups_applied_toast": "Group \"{name}\" applied! Enabled: {enabled}, disabled: {disabled}",
+  "groups_err_name": "Please enter group name",
+  "groups_err_no_mods": "Select at least one mod",
+  "groups_err_path": "Specify ZZMI path in settings",
+  "groups_mods_count": "{count} mods",
+  "groups_add_selected": "+ Add selected mods"
 }

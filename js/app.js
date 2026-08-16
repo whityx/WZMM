@@ -8,7 +8,7 @@ const http = require("http");
 let AdmZip = null;
 try {
   AdmZip = require("adm-zip");
-} catch (e) {}
+} catch (e) { }
 
 const configDir = path.join(os.homedir(), ".config", "wzmm");
 if (!fs.existsSync(configDir)) {
@@ -18,24 +18,22 @@ if (!fs.existsSync(configDir)) {
 const settingsFilePath = path.join(configDir, "settings.json");
 
 const ModManager = require(path.join(__dirname, "js", "modManager.js"));
+const GroupManager = require(path.join(__dirname, "js", "groupmanager.js"));
 const startOpt = require(path.join(__dirname, "js", "startopt.js"));
 const modManager = new ModManager();
+const groupManager = new GroupManager();
 
 const activeDownloads = {};
 
-// ===== Локализация =====
 let translations = {};
 const loadTranslations = (lang) => {
-  // Защита от старых неверных значений. По умолчанию теперь English ("en")
   if (lang !== "ru" && lang !== "en") {
     lang = "en";
   }
 
-  // __dirname указывает на корень, где лежит index.html
   let localePath = path.join(__dirname, "locales", `${lang}.json`);
-  
+
   if (!fs.existsSync(localePath)) {
-    // Резервный вариант поиска (если пути Electron сдвинуты)
     localePath = path.join(process.cwd(), "locales", `${lang}.json`);
   }
 
@@ -72,7 +70,51 @@ const applyTranslationsToDOM = (container) => {
     if (translations[key]) el.title = translations[key];
   });
 };
-// =======================
+
+const getThemesDir = () => {
+  let dir = path.join(__dirname, "themes");
+  if (!fs.existsSync(dir)) {
+    dir = path.join(process.cwd(), "themes");
+  }
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (e) { }
+  }
+  return dir;
+};
+
+const getAvailableThemes = () => {
+  const dir = getThemesDir();
+  try {
+    if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      const themes = files
+        .filter((file) => file.endsWith(".css"))
+        .map((file) => path.basename(file, ".css"));
+      if (!themes.includes("base")) {
+        themes.unshift("base");
+      }
+      return themes;
+    }
+  } catch (e) {
+    console.error("Theme load error", e);
+  }
+  return ["base"];
+};
+
+const applyTheme = (themeName) => {
+  let themeLink = document.getElementById("theme-link");
+  if (!themeLink) {
+    themeLink = document.createElement("link");
+    themeLink.id = "theme-link";
+    themeLink.rel = "stylesheet";
+    document.head.appendChild(themeLink);
+  }
+  const themeFile = `${themeName || "base"}.css`;
+  themeLink.href = `themes/${themeFile}`;
+  document.documentElement.setAttribute("data-theme", themeName || "base");
+};
 
 const timeAgo = (timestamp) => {
   if (!timestamp) return "N/A";
@@ -147,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const indicator = document.getElementById("sidebar-indicator");
 
   let currentSettings = getSettings();
-  // Загружаем язык (по умолчанию en)
+  applyTheme(currentSettings.theme || "base");
   loadTranslations(currentSettings.language || "en");
   applyTranslationsToDOM(document.body);
 
@@ -234,6 +276,9 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const loadPage = async (pageName) => {
+    isGroupDrawerOpen = false;
+    selectedModsForGroup = new Set();
+    editingGroupId = null;
     try {
       let html = htmlCache[pageName];
       let css = pageCssMap[pageName];
@@ -274,8 +319,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       contentContainer.innerHTML = html;
-      
-      // Сразу переводим контент вставленной страницы
+
       applyTranslationsToDOM(contentContainer);
 
       if (pageName === "settings") initSettings();
@@ -288,8 +332,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   function getSettings() {
-    // По умолчанию язык теперь английский
-    const defaultSettings = { nsfwMode: "show", language: "en" };
+    const defaultSettings = { nsfwMode: "show", language: "en", theme: "base" };
 
     if (!fs.existsSync(settingsFilePath)) {
       fs.writeFileSync(
@@ -301,12 +344,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       let settings = JSON.parse(fs.readFileSync(settingsFilePath, "utf-8"));
-      
-      // Защита: если сохранен мусор, сбрасываем на 'en'
+
       if (settings.language !== "ru" && settings.language !== "en") {
         settings.language = "en";
       }
-      
+
+      if (!settings.theme) {
+        settings.theme = "base";
+      }
+
       return settings;
     } catch (e) {
       fs.writeFileSync(
@@ -318,7 +364,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  let isGroupDrawerOpen = false;
+  let selectedModsForGroup = new Set();
+  let editingGroupId = null;
+
   const initInstalledMods = () => {
+    isGroupDrawerOpen = false;
+    selectedModsForGroup = new Set();
+    editingGroupId = null;
     const filterSelect = document.getElementById("mods-filter");
     const searchInput = document.getElementById("mods-search");
     if (filterSelect) {
@@ -337,12 +390,262 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     renderModsGrid();
     initModalLogic();
+    initGroupDrawerLogic();
+  };
+
+  const updateGroupSelectionUI = () => {
+    const countEl = document.getElementById("group-selected-count");
+    if (countEl) {
+      countEl.textContent = t('groups_selected_count', { count: selectedModsForGroup.size });
+    }
+  };
+
+  const showGroupToast = (msg) => {
+    const toast = document.getElementById("group-toast");
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toast._timeout);
+    toast._timeout = setTimeout(() => {
+      toast.classList.remove("show");
+    }, 3500);
+  };
+
+  const renderGroupList = () => {
+    const container = document.getElementById("groups-container");
+    if (!container) return;
+    const groups = groupManager.getGroups();
+
+    if (groups.length === 0) {
+      container.innerHTML = `<div class="group-empty-state">${t('groups_empty')}</div>`;
+      return;
+    }
+
+    container.innerHTML = "";
+    groups.forEach((group) => {
+      const card = document.createElement("div");
+      card.className = "group-card";
+      card.dataset.groupId = group.id;
+
+      const modCount = group.mods ? group.mods.length : 0;
+      const modsListHtml = (group.mods || []).map(m => `
+        <div class="group-mod-item">
+          <span class="group-mod-item-name" title="${m}">${m}</span>
+          <button class="group-mod-remove-btn" title="Remove" data-mod="${encodeURIComponent(m)}">&times;</button>
+        </div>
+      `).join("");
+
+      card.innerHTML = `
+        <div class="group-card-header">
+          <div class="group-card-top">
+            <div class="group-card-name" title="${group.name}">${group.name}</div>
+            <span class="group-badge">${t('groups_mods_count', { count: modCount })}</span>
+          </div>
+          <div class="group-card-actions">
+            <button class="btn-group-apply" title="${t('groups_apply_btn')}">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+              <span>${t('groups_apply_btn')}</span>
+            </button>
+            <button class="btn-group-icon btn-toggle-expand" title="Details">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <button class="btn-group-icon btn-edit-group" title="${t('groups_edit_title')}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            </button>
+            <button class="btn-group-icon delete btn-delete-group" title="Delete">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"></path></svg>
+            </button>
+          </div>
+        </div>
+        <div class="group-card-details">
+          <div class="group-mods-list">
+            ${modsListHtml || `<div style="font-size: 0.8rem; color: var(--text-muted); padding: 4px;">0 mods</div>`}
+          </div>
+          <button class="group-card-add-selected">${t('groups_add_selected')}</button>
+        </div>
+      `;
+
+      card.querySelector(".btn-group-apply").addEventListener("click", () => {
+        const res = groupManager.applyGroup(currentSettings.xxmiPath, group.id, modManager);
+        if (res.success) {
+          showGroupToast(t('groups_applied_toast', {
+            name: res.groupName,
+            enabled: res.enabledCount,
+            disabled: res.disabledCount
+          }));
+          renderModsGrid();
+        } else if (res.reason === "invalid_path") {
+          alert(t('groups_err_path'));
+        }
+      });
+
+      card.querySelector(".btn-toggle-expand").addEventListener("click", () => {
+        card.classList.toggle("expanded");
+      });
+
+      card.querySelector(".btn-edit-group").addEventListener("click", () => {
+        editingGroupId = group.id;
+        const nameInput = document.getElementById("group-name-input");
+        const modeTitle = document.getElementById("group-panel-mode-title");
+        const saveBtn = document.getElementById("btn-save-group");
+        const cancelBtn = document.getElementById("btn-cancel-edit-group");
+
+        if (nameInput) nameInput.value = group.name;
+        if (modeTitle) modeTitle.textContent = t('groups_edit_title');
+        if (saveBtn) saveBtn.textContent = t('groups_save_btn');
+        if (cancelBtn) cancelBtn.style.display = "block";
+
+        selectedModsForGroup = new Set(group.mods || []);
+        updateGroupSelectionUI();
+        renderModsGrid();
+      });
+
+      card.querySelector(".btn-delete-group").addEventListener("click", () => {
+        customConfirm(
+          t('groups_delete_confirm', { name: group.name }),
+          () => {
+            groupManager.deleteGroup(group.id);
+            if (editingGroupId === group.id) resetGroupEditMode();
+            renderGroupList();
+          }
+        );
+      });
+
+      card.querySelectorAll(".group-mod-remove-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const modName = decodeURIComponent(btn.dataset.mod);
+          groupManager.removeModFromGroup(group.id, modName);
+          if (editingGroupId === group.id) {
+            selectedModsForGroup.delete(modName);
+            updateGroupSelectionUI();
+            renderModsGrid();
+          }
+          renderGroupList();
+        });
+      });
+
+      card.querySelector(".group-card-add-selected").addEventListener("click", () => {
+        if (selectedModsForGroup.size === 0) {
+          showGroupToast(t('groups_err_no_mods'));
+          return;
+        }
+        selectedModsForGroup.forEach(m => groupManager.addModToGroup(group.id, m));
+        renderGroupList();
+      });
+
+      container.appendChild(card);
+    });
+  };
+
+  const resetGroupEditMode = () => {
+    editingGroupId = null;
+    const nameInput = document.getElementById("group-name-input");
+    const modeTitle = document.getElementById("group-panel-mode-title");
+    const saveBtn = document.getElementById("btn-save-group");
+    const cancelBtn = document.getElementById("btn-cancel-edit-group");
+
+    if (nameInput) nameInput.value = "";
+    if (modeTitle) modeTitle.textContent = t('groups_create_title');
+    if (saveBtn) saveBtn.textContent = t('groups_create_btn');
+    if (cancelBtn) cancelBtn.style.display = "none";
+    selectedModsForGroup = new Set();
+    updateGroupSelectionUI();
+    renderModsGrid();
+  };
+
+  const initGroupDrawerLogic = () => {
+    const btnManage = document.getElementById("btn-group-manage");
+    const drawer = document.getElementById("group-side-drawer");
+    const btnClose = document.getElementById("btn-close-group-drawer");
+    const btnSave = document.getElementById("btn-save-group");
+    const btnCancel = document.getElementById("btn-cancel-edit-group");
+    const btnSelectAll = document.getElementById("btn-group-select-all");
+    const btnDeselectAll = document.getElementById("btn-group-deselect-all");
+    const nameInput = document.getElementById("group-name-input");
+    const pageContainer = document.querySelector(".installed-page-container");
+
+    const openDrawer = () => {
+      isGroupDrawerOpen = true;
+      if (drawer) drawer.classList.add("open");
+      if (btnManage) btnManage.classList.add("active");
+      if (pageContainer) pageContainer.classList.add("group-mode-active");
+      updateGroupSelectionUI();
+      renderGroupList();
+      renderModsGrid();
+    };
+
+    const closeDrawer = () => {
+      isGroupDrawerOpen = false;
+      if (drawer) drawer.classList.remove("open");
+      if (btnManage) btnManage.classList.remove("active");
+      if (pageContainer) pageContainer.classList.remove("group-mode-active");
+      resetGroupEditMode();
+    };
+
+    if (btnManage) {
+      btnManage.onclick = () => {
+        if (isGroupDrawerOpen) closeDrawer();
+        else openDrawer();
+      };
+    }
+    if (btnClose) btnClose.onclick = closeDrawer;
+
+    if (btnSelectAll) {
+      btnSelectAll.onclick = () => {
+        const { mods } = modManager.getMods(currentSettings.xxmiPath, "all", "");
+        mods.forEach(m => selectedModsForGroup.add(m.name));
+        updateGroupSelectionUI();
+        renderModsGrid();
+      };
+    }
+
+    if (btnDeselectAll) {
+      btnDeselectAll.onclick = () => {
+        selectedModsForGroup.clear();
+        updateGroupSelectionUI();
+        renderModsGrid();
+      };
+    }
+
+    if (btnSave) {
+      btnSave.onclick = () => {
+        const name = (nameInput ? nameInput.value : "").trim();
+        if (!name) {
+          showGroupToast(t('groups_err_name'));
+          return;
+        }
+        if (selectedModsForGroup.size === 0) {
+          showGroupToast(t('groups_err_no_mods'));
+          return;
+        }
+
+        groupManager.saveGroup({
+          id: editingGroupId,
+          name,
+          mods: Array.from(selectedModsForGroup)
+        });
+
+        resetGroupEditMode();
+        renderGroupList();
+      };
+    }
+
+    if (btnCancel) {
+      btnCancel.onclick = resetGroupEditMode;
+    }
   };
 
   const renderModsGrid = () => {
     const grid = document.getElementById("mods-grid");
     const emptyState = document.getElementById("mods-empty-state");
     if (!grid || !emptyState) return;
+
+    const pageContainer = document.querySelector(".installed-page-container");
+    if (pageContainer) {
+      if (isGroupDrawerOpen) pageContainer.classList.add("group-mode-active");
+      else pageContainer.classList.remove("group-mode-active");
+    }
 
     const { validPath, totalCount, mods } = modManager.getMods(
       currentSettings.xxmiPath,
@@ -369,7 +672,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     mods.forEach((mod, index) => {
       const card = document.createElement("div");
-      card.className = "mod-card";
+      const isSelected = selectedModsForGroup.has(mod.name);
+      card.className = `mod-card${isSelected ? " selected-for-group" : ""}`;
       card.style.setProperty("--card-opacity", mod.active ? "1" : "0.6");
       card.style.animationDelay = `${Math.min(index, 12) * 0.025}s`;
 
@@ -386,25 +690,49 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       card.innerHTML = `
-                <div class="mod-preview" style="${bgStyle} cursor: pointer;">
-                    ${mod.previewUrl ? "" : `<div class="mod-placeholder">${t('mod_no_photo')}</div>`}
-                </div>
-                <div class="mod-footer">
-                    <button class="mod-toggle-btn ${mod.active ? "active" : ""}" title="${mod.active ? t('mod_turn_off') : t('mod_turn_on')}">
-                        ${mod.active ? iconActive : iconInactive}
-                    </button>
-                    <div class="mod-name-container">
-                        <div class="mod-name" title="${mod.name}">${mod.name}</div>
-                    </div>
-                    <button class="mod-delete-btn" title="${t('mod_delete_forever')}">
-                        ${iconDelete}
-                    </button>
-                </div>
-            `;
+        <div class="mod-select-indicator">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+        <div class="mod-preview" style="${bgStyle} cursor: pointer;">
+          ${mod.previewUrl ? "" : `<div class="mod-placeholder">${t('mod_no_photo')}</div>`}
+        </div>
+        <div class="mod-footer">
+          <button class="mod-toggle-btn ${mod.active ? "active" : ""}" title="${mod.active ? t('mod_turn_off') : t('mod_turn_on')}">
+            ${mod.active ? iconActive : iconInactive}
+          </button>
+          <div class="mod-name-container">
+            <div class="mod-name" title="${mod.name}">${mod.name}</div>
+          </div>
+          <button class="mod-delete-btn" title="${t('mod_delete_forever')}">
+            ${iconDelete}
+          </button>
+        </div>
+      `;
 
-      card
-        .querySelector(".mod-preview")
-        .addEventListener("click", () => openModModal(mod));
+      const toggleSelection = (e) => {
+        if (e) e.stopPropagation();
+        if (selectedModsForGroup.has(mod.name)) {
+          selectedModsForGroup.delete(mod.name);
+          card.classList.remove("selected-for-group");
+        } else {
+          selectedModsForGroup.add(mod.name);
+          card.classList.add("selected-for-group");
+        }
+        updateGroupSelectionUI();
+      };
+
+      const selectIndicator = card.querySelector(".mod-select-indicator");
+      if (selectIndicator) {
+        selectIndicator.addEventListener("click", toggleSelection);
+      }
+
+      card.querySelector(".mod-preview").addEventListener("click", (e) => {
+        if (isGroupDrawerOpen) {
+          toggleSelection(e);
+        } else {
+          openModModal(mod);
+        }
+      });
 
       const toggleBtn = card.querySelector(".mod-toggle-btn");
       toggleBtn.addEventListener("click", (e) => {
@@ -444,6 +772,8 @@ document.addEventListener("DOMContentLoaded", () => {
               mod.active,
             );
             if (deleted) {
+              selectedModsForGroup.delete(mod.name);
+              updateGroupSelectionUI();
               renderModsGrid();
             } else {
               alert(t('mod_delete_err'));
@@ -633,9 +963,9 @@ document.addEventListener("DOMContentLoaded", () => {
               totalDl +=
                 parseInt(
                   file._nDownloadCount ??
-                    file.nDownloadCount ??
-                    file.DownloadCount ??
-                    0,
+                  file.nDownloadCount ??
+                  file.DownloadCount ??
+                  0,
                   10,
                 ) || 0;
             });
@@ -1015,7 +1345,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
           })
           .on("error", (err) => {
-            fs.unlink(tempPath, () => {});
+            fs.unlink(tempPath, () => { });
             reject(err);
           });
         activeDownloads[downloadId].req = req;
@@ -1189,6 +1519,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const nsfwModeSelect = document.getElementById("setting-nsfw-mode");
     const langSelect = document.getElementById("language-selector");
+    const themeSelect = document.getElementById("setting-theme");
 
     if (currentSettings.xxmiPath)
       xxmiPathInput.value = currentSettings.xxmiPath;
@@ -1197,9 +1528,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (nsfwModeSelect)
       nsfwModeSelect.value = currentSettings.nsfwMode || "show";
-    
+
     if (langSelect) {
       langSelect.value = currentSettings.language || "en";
+    }
+
+    if (themeSelect) {
+      const themes = getAvailableThemes();
+      themeSelect.innerHTML = "";
+      themes.forEach((theme) => {
+        const opt = document.createElement("option");
+        opt.value = theme;
+        opt.textContent = theme.charAt(0).toUpperCase() + theme.slice(1);
+        opt.style.background = "var(--bg-main)";
+        themeSelect.appendChild(opt);
+      });
+      themeSelect.value = currentSettings.theme || "base";
     }
 
     const saveSettings = () => {
@@ -1212,6 +1556,7 @@ document.addEventListener("DOMContentLoaded", () => {
           : currentSettings.xxmiBinPath || "",
         nsfwMode: nsfwModeSelect ? nsfwModeSelect.value : "show",
         language: langSelect ? langSelect.value : (currentSettings.language || "en"),
+        theme: themeSelect ? themeSelect.value : (currentSettings.theme || "base"),
       };
       fs.writeFileSync(
         settingsFilePath,
@@ -1219,23 +1564,25 @@ document.addEventListener("DOMContentLoaded", () => {
       );
     };
 
+    if (themeSelect) {
+      themeSelect.addEventListener("change", (e) => {
+        saveSettings();
+        applyTheme(currentSettings.theme);
+      });
+    }
+
     if (nsfwModeSelect) nsfwModeSelect.addEventListener("change", saveSettings);
 
-if (langSelect) {
+    if (langSelect) {
       langSelect.addEventListener("change", (e) => {
         saveSettings();
         loadTranslations(currentSettings.language);
         applyTranslationsToDOM(document.body);
-        loadPage("settings"); // Перезагружаем страницу настроек
-        
-        // --- ИСПРАВЛЕНИЕ ОБВОДКИ ---
-        // Даем браузеру немного времени (50мс) на отрисовку новых шрифтов и ширины, 
-        // после чего заставляем ползунок пересчитать свои размеры и позицию.
+        loadPage("settings");
         setTimeout(() => {
           const activeItem = document.querySelector(".sidebar-item.active");
           if (activeItem) moveIndicator(activeItem);
         }, 50);
-        // ---------------------------
       });
     }
 
@@ -1248,7 +1595,7 @@ if (langSelect) {
       try {
         if (webUtils && typeof webUtils.getPathForFile === "function")
           return webUtils.getPathForFile(file);
-      } catch (e) {}
+      } catch (e) { }
       return file.path || "";
     };
 

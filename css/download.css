@@ -66,7 +66,7 @@
 .mods-filter-select:focus,
 .mods-filter-select:hover {
   border-color: var(--border-focus);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.03));
 }
 .select-arrow {
   position: absolute;
@@ -94,7 +94,7 @@
 }
 .btn-refresh:hover {
   background: var(--bg-surface);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.15));
 }
 
 .downloads-summary {
@@ -308,7 +308,7 @@
   top: 10px;
   right: 10px;
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent, white);
   font-size: 0.7rem;
   font-weight: 700;
   padding: 3px 8px;
@@ -364,7 +364,7 @@
 .mod-toggle-btn.downloaded {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent, #fff);
 }
 
 .gb-modal-content {
@@ -399,7 +399,7 @@
   height: 300px;
   margin-bottom: 20px;
   position: relative;
-  background: #000;
+  background: var(--bg-surface-dark, #000);
   border: 1px solid var(--border-subtle);
   overflow: hidden;
 }
@@ -420,10 +420,10 @@
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--bg-modal-overlay, rgba(0, 0, 0, 0.5));
   backdrop-filter: blur(4px);
   border: none;
-  color: #fff;
+  color: var(--text-on-accent, #fff);
   font-size: 20px;
   width: 36px;
   height: 36px;
@@ -441,7 +441,7 @@
   right: 12px;
 }
 .carousel-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.1));
 }
 
 .gb-file-item {
@@ -469,5 +469,5 @@
 .btn-install:hover:not(:disabled) {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent, #fff);
 }

@@ -1,0 +1,49 @@
+:root {
+  --bg-main: #242933;
+  --bg-surface: #2e3440;
+  --bg-surface-hover: rgba(255, 255, 255, 0.05);
+  --bg-surface-dark: #1e222a;
+  --bg-glass: rgba(46, 52, 64, 0.8);
+  --bg-modal-overlay: rgba(26, 29, 36, 0.7);
+
+  --text-primary: #eceff4;
+  --text-secondary: #d8dee9;
+  --text-muted: #7e889b;
+  --text-on-accent: #2e3440;
+
+  --accent: #88c0d0;
+  --accent-hover: #81a1c1;
+  --accent-dim: rgba(136, 192, 208, 0.15);
+
+  --color-danger: #bf616a;
+  --color-danger-hover: #a34e56;
+  --color-danger-dim: rgba(191, 97, 106, 0.2);
+  --color-success: #a3be8c;
+
+  --border-subtle: rgba(216, 222, 233, 0.1);
+  --border-focus: rgba(136, 192, 208, 0.6);
+  --border-hover: rgba(136, 192, 208, 0.3);
+
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
+
+  --glass-blur: blur(20px) saturate(140%);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+
+  --transition-fast: 0.15s ease;
+  --transition-med: 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --font-family: "Inter", system-ui, -apple-system, sans-serif;
+
+  --scrollbar-thumb: rgba(136, 192, 208, 0.2);
+  --scrollbar-thumb-hover: rgba(136, 192, 208, 0.35);
+
+  --btn-launch-bg: var(--accent);
+  --btn-launch-text: #2e3440;
+  --btn-launch-hover-bg: #81a1c1;
+}

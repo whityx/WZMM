@@ -1,38 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
-:root {
-  --bg-main: #09090b;
-  --bg-glass: rgba(18, 18, 24, 0.65);
-  --bg-surface: #141419;
-
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-
-  --accent: #564787;
-  --accent-hover: #6a58a6;
-  --accent-dim: rgba(86, 71, 135, 0.15);
-
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-focus: rgba(86, 71, 135, 0.6);
-
-  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6);
-
-  --glass-blur: blur(20px) saturate(160%);
-
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-pill: 9999px;
-
-  --transition-fast: 0.15s ease;
-  --transition-med: 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-
-  --font-family: "Inter", system-ui, -apple-system, sans-serif;
-}
-
 *,
 *::before,
 *::after {
@@ -79,11 +46,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--scrollbar-thumb, rgba(255, 255, 255, 0.15));
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--scrollbar-thumb-hover, rgba(255, 255, 255, 0.3));
 }
 
 .sidebar {
@@ -171,18 +138,18 @@ body {
 
 .sidebar-item:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.06));
 }
 .sidebar-item.active {
-  color: #fff;
+  color: var(--text-on-accent, #fff);
   background: transparent;
 }
 
 .btn-launch {
   margin-left: 12px;
   padding: 8px 20px;
-  background: var(--text-primary);
-  color: var(--bg-main);
+  background: var(--btn-launch-bg, var(--text-primary));
+  color: var(--btn-launch-text, var(--bg-main));
   border: none;
   border-radius: var(--radius-pill);
   font-family: inherit;
@@ -192,7 +159,7 @@ body {
   transition: var(--transition-med);
 }
 .btn-launch:hover {
-  background: #fff;
+  background: var(--btn-launch-hover-bg, #fff);
   transform: scale(1.02);
 }
 
@@ -262,8 +229,8 @@ h2 {
   height: 44px;
 }
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.05));
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.15));
 }
 
 .toggle-row {
@@ -298,7 +265,7 @@ h2 {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.1));
   border-radius: var(--radius-pill);
   transition: var(--transition-med);
 }
@@ -309,7 +276,7 @@ h2 {
   width: 18px;
   left: 3px;
   bottom: 3px;
-  background: #fff;
+  background: var(--text-primary, #fff);
   border-radius: 50%;
   transition: var(--transition-med);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -353,7 +320,7 @@ h2 {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--bg-modal-overlay, rgba(0, 0, 0, 0.6));
   backdrop-filter: blur(8px);
   z-index: 10000;
   justify-content: center;
@@ -436,7 +403,7 @@ h2 {
 }
 .modal-text a:hover,
 .modal-link:hover {
-  color: #fff;
+  color: var(--text-primary, #fff);
 }
 .modal-text * {
   max-width: 100% !important;

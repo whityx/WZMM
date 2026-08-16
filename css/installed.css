@@ -94,7 +94,7 @@
 }
 .mod-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.1));
   box-shadow: var(--shadow-sm);
 }
 
@@ -156,13 +156,13 @@
   height: 14px;
 }
 .mod-toggle-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.1));
   color: var(--text-primary);
 }
 .mod-toggle-btn.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent, #fff);
 }
 
 .mod-delete-btn {
@@ -188,9 +188,9 @@
   transform: scale(1);
 }
 .mod-delete-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.4);
+  background: var(--color-danger-dim, rgba(239, 68, 68, 0.15));
+  color: var(--color-danger, #ef4444);
+  border-color: var(--color-danger, rgba(239, 68, 68, 0.4));
 }
 .mod-delete-btn svg {
   width: 14px;
@@ -221,7 +221,7 @@
     var(--bg-surface) 0%,
     var(--bg-main) 100%
   );
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  border: 1px solid var(--color-danger-dim, rgba(239, 68, 68, 0.25));
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.8),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -230,14 +230,14 @@
 .confirm-icon {
   width: 64px;
   height: 64px;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+  background: var(--color-danger-dim, rgba(239, 68, 68, 0.1));
+  color: var(--color-danger, #ef4444);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 24px;
-  box-shadow: 0 0 24px rgba(239, 68, 68, 0.15);
+  box-shadow: 0 0 24px var(--color-danger-dim, rgba(239, 68, 68, 0.15));
 }
 
 .confirm-icon svg {
@@ -271,18 +271,18 @@
 }
 
 .btn-danger {
-  background: #ef4444;
+  background: var(--color-danger, #ef4444);
   color: white;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: var(--transition-med);
-  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
+  box-shadow: 0 4px 16px var(--color-danger-dim, rgba(239, 68, 68, 0.3));
 }
 
 .btn-danger:hover {
-  background: #dc2626;
-  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+  background: var(--color-danger-hover, #dc2626);
+  box-shadow: 0 6px 20px var(--color-danger-dim, rgba(239, 68, 68, 0.4));
   transform: translateY(-2px);
 }
 

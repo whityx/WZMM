@@ -68,6 +68,7 @@
   "start_sys_err_msg": "Произошла ошибка: {error}",
 
   "settings_title": "Настройки приложения",
+  "settings_theme": "Тема оформления",
   "settings_xxmi_path": "Путь к ZZMI",
   "settings_bin_path": "Путь к bin",
   "settings_browse": "Обзор",
@@ -108,5 +109,27 @@
   "nav_download": "Скачать",
   "nav_downloads": "Загрузки",
   "nav_settings": "Настройки",
-  "nav_launch_game": "Запустить игру"
+  "nav_launch_game": "Запустить игру",
+
+  "installed_groups_btn": "Управление группами",
+  "groups_title": "Группы модов",
+  "groups_create_title": "Создать группу",
+  "groups_edit_title": "Редактировать группу",
+  "groups_name_ph": "Название группы...",
+  "groups_create_btn": "Создать группу",
+  "groups_save_btn": "Сохранить изменения",
+  "groups_cancel_btn": "Отмена",
+  "groups_selected_count": "Выбрано модов: {count}",
+  "groups_select_all": "Выбрать все",
+  "groups_deselect_all": "Снять выбор",
+  "groups_list_title": "Существующие группы",
+  "groups_empty": "Групп пока нет. Выберите нужные моды слева и создайте первую группу!",
+  "groups_apply_btn": "Применить",
+  "groups_delete_confirm": "Удалить группу \"{name}\"?",
+  "groups_applied_toast": "Группа \"{name}\" применена! Включено: {enabled}, выключено: {disabled}",
+  "groups_err_name": "Введите название группы",
+  "groups_err_no_mods": "Выберите хотя бы один мод",
+  "groups_err_path": "Укажите путь к ZZMI в настройках",
+  "groups_mods_count": "{count} модов",
+  "groups_add_selected": "+ Добавить выбранные моды"
 }

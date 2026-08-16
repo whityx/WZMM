@@ -1,4 +1,5 @@
 <link rel="stylesheet" href="css/installed.css">
+<link rel="stylesheet" href="css/groupmenu.css">
 
 <div class="installed-page-container">
     <div class="page-header">
@@ -23,6 +24,15 @@
                     <span class="select-arrow">▼</span>
                 </div>
             </div>
+
+            <button id="btn-group-manage" class="btn-group-manage">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    <line x1="12" y1="11" x2="12" y2="17"></line>
+                    <line x1="9" y1="14" x2="15" y2="14"></line>
+                </svg>
+                <span data-i18n-text="installed_groups_btn">Управление группами</span>
+            </button>
         </div>
     </div>
     
@@ -31,6 +41,46 @@
     </div>
 
     <div id="mods-grid" class="mods-grid"></div>
+
+    <div id="group-side-drawer" class="group-side-drawer">
+        <div class="group-drawer-header">
+            <div class="group-drawer-title">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+                <span data-i18n-text="groups_title">Группы модов</span>
+            </div>
+            <button id="btn-close-group-drawer" class="group-drawer-close">&times;</button>
+        </div>
+
+        <div class="group-drawer-body">
+            <div class="group-create-panel">
+                <div id="group-panel-mode-title" class="group-panel-title" data-i18n-text="groups_create_title">Создать группу</div>
+                <div class="group-input-wrapper">
+                    <input type="text" id="group-name-input" class="group-text-input" placeholder="Название группы..." data-i18n-placeholder="groups_name_ph">
+                </div>
+                <div class="group-selection-info">
+                    <span id="group-selected-count">Выбрано модов: 0</span>
+                    <div class="group-quick-links">
+                        <button id="btn-group-select-all" class="group-link-btn" data-i18n-text="groups_select_all">Выбрать все</button>
+                        <button id="btn-group-deselect-all" class="group-link-btn" data-i18n-text="groups_deselect_all">Снять выбор</button>
+                    </div>
+                </div>
+                <div class="group-btn-row">
+                    <button id="btn-save-group" class="btn-group-primary" data-i18n-text="groups_create_btn">Создать группу</button>
+                    <button id="btn-cancel-edit-group" class="btn-group-cancel" style="display: none;" data-i18n-text="groups_cancel_btn">Отмена</button>
+                </div>
+            </div>
+
+            <div class="group-list-heading">
+                <span data-i18n-text="groups_list_title">Существующие группы</span>
+            </div>
+
+            <div id="groups-container" class="groups-container"></div>
+        </div>
+    </div>
+
+    <div id="group-toast" class="group-toast"></div>
 
     <div id="mod-modal" class="modal-overlay">
         <div class="modal-content">
