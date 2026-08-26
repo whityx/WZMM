@@ -5,10 +5,7 @@ const { shell, webUtils } = require("electron");
 const https = require("https");
 const http = require("http");
 
-let AdmZip = null;
-try {
-  AdmZip = require("adm-zip");
-} catch (e) { }
+
 
 const configDir = path.join(os.homedir(), ".config", "wzmm");
 if (!fs.existsSync(configDir)) {
@@ -19,6 +16,8 @@ const settingsFilePath = path.join(configDir, "settings.json");
 
 const ModManager = require(path.join(__dirname, "js", "modManager.js"));
 const GroupManager = require(path.join(__dirname, "js", "groupmanager.js"));
+const { SideMenuDownload, InstalledFilterDrawer } = require(path.join(__dirname, "js", "sideMenuFilter.js"));
+const ArchiveExtractor = require(path.join(__dirname, "js", "archiveExtractor.js"));
 const startOpt = require(path.join(__dirname, "js", "startopt.js"));
 const modManager = new ModManager();
 const groupManager = new GroupManager();
@@ -56,6 +55,25 @@ const t = (key, params = {}) => {
   return str;
 };
 
+const htmlToPlainText = (html) => {
+  if (!html) return "";
+  return html
+    .replace(/<li[^>]*>/gi, "\n• ")
+    .replace(/<\/li>/gi, "")
+    .replace(/<br\s*[\/]?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, "$2 ($1)")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n\s*\n\s*\n+/g, "\n\n")
+    .trim();
+};
+
 const applyTranslationsToDOM = (container) => {
   container.querySelectorAll("[data-i18n-text]").forEach(el => {
     const key = el.getAttribute("data-i18n-text");
@@ -84,6 +102,13 @@ const getThemesDir = () => {
   return dir;
 };
 
+const mapLegacyTheme = (name) => {
+  if (!name || name === "base") return "purple";
+  if (name === "crimson") return "red";
+  if (name === "emerald") return "green";
+  return name;
+};
+
 const getAvailableThemes = () => {
   const dir = getThemesDir();
   try {
@@ -92,18 +117,36 @@ const getAvailableThemes = () => {
       const themes = files
         .filter((file) => file.endsWith(".css"))
         .map((file) => path.basename(file, ".css"));
-      if (!themes.includes("base")) {
-        themes.unshift("base");
-      }
-      return themes;
+      const preferredOrder = [
+        "purple",
+        "red",
+        "green",
+        "nord",
+        "amber",
+        "sakura",
+        "midnight",
+        "sunset",
+        "cyan",
+      ];
+      themes.sort((a, b) => {
+        const idxA = preferredOrder.indexOf(a);
+        const idxB = preferredOrder.indexOf(b);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return a.localeCompare(b);
+      });
+      return themes.length > 0 ? themes : ["purple"];
     }
   } catch (e) {
     console.error("Theme load error", e);
   }
-  return ["base"];
+  return ["purple"];
 };
 
-const applyTheme = (themeName) => {
+let themeTransitionTimeout = null;
+const applyTheme = (themeName, isInitial = false) => {
+  const activeTheme = mapLegacyTheme(themeName);
   let themeLink = document.getElementById("theme-link");
   if (!themeLink) {
     themeLink = document.createElement("link");
@@ -111,9 +154,20 @@ const applyTheme = (themeName) => {
     themeLink.rel = "stylesheet";
     document.head.appendChild(themeLink);
   }
-  const themeFile = `${themeName || "base"}.css`;
+
+  if (!isInitial) {
+    document.documentElement.classList.add("theme-transition");
+    if (themeTransitionTimeout) {
+      clearTimeout(themeTransitionTimeout);
+    }
+    themeTransitionTimeout = setTimeout(() => {
+      document.documentElement.classList.remove("theme-transition");
+    }, 700);
+  }
+
+  const themeFile = `${activeTheme}.css`;
   themeLink.href = `themes/${themeFile}`;
-  document.documentElement.setAttribute("data-theme", themeName || "base");
+  document.documentElement.setAttribute("data-theme", activeTheme);
 };
 
 const timeAgo = (timestamp) => {
@@ -138,6 +192,154 @@ const abbreviateCount = (value) => {
     return (num / 1000000).toFixed(1).replace(/\.0$/, "") + "m";
   if (num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
   return num.toString();
+};
+
+const rgbToHsl = (r, g, b) => {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max === min) {
+    h = s = 0;
+  } else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+  return [h, s, l];
+};
+
+const hslToRgb = (h, s, l) => {
+  let r, g, b;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1 / 3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1 / 3);
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+};
+
+
+const imageColorCache = new Map();
+
+
+let colorExtractionQueue = [];
+let isProcessingColorQueue = false;
+
+const processColorQueue = () => {
+  if (colorExtractionQueue.length === 0) {
+    isProcessingColorQueue = false;
+    return;
+  }
+  isProcessingColorQueue = true;
+
+
+  const batch = colorExtractionQueue.splice(0, 3);
+
+  batch.forEach(({ imageUrl, resolve }) => {
+    if (imageColorCache.has(imageUrl)) {
+      return resolve(imageColorCache.get(imageUrl));
+    }
+
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const W = 16;
+        const H = 16;
+        canvas.width = W;
+        canvas.height = H;
+        ctx.drawImage(img, 0, 0, W, H);
+        const data = ctx.getImageData(0, 0, W, H).data;
+
+        let rSum = 0, gSum = 0, bSum = 0, count = 0;
+        for (let y = 8; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const idx = (y * W + x) * 4;
+            if (data[idx + 3] > 30) {
+              rSum += data[idx];
+              gSum += data[idx + 1];
+              bSum += data[idx + 2];
+              count++;
+            }
+          }
+        }
+
+        if (count === 0) {
+          imageColorCache.set(imageUrl, null);
+          return resolve(null);
+        }
+
+        let r = Math.round(rSum / count);
+        let g = Math.round(gSum / count);
+        let b = Math.round(bSum / count);
+
+        const [h, s, l] = rgbToHsl(r, g, b);
+        const tunedS = Math.min(1.0, Math.max(0.45, s * 1.35));
+        const tunedL = Math.min(0.58, Math.max(0.42, l));
+        [r, g, b] = hslToRgb(h, tunedS, tunedL);
+
+        const rgbStr = `${r}, ${g}, ${b}`;
+        const result = {
+          rgb: rgbStr,
+          rgb1: rgbStr,
+          rgb2: rgbStr,
+        };
+        imageColorCache.set(imageUrl, result);
+        resolve(result);
+      } catch (e) {
+        imageColorCache.set(imageUrl, null);
+        resolve(null);
+      }
+    };
+    img.onerror = () => {
+      imageColorCache.set(imageUrl, null);
+      resolve(null);
+    };
+    img.src = imageUrl;
+  });
+
+
+  if (typeof requestIdleCallback !== "undefined") {
+    requestIdleCallback(processColorQueue, { timeout: 100 });
+  } else {
+    setTimeout(processColorQueue, 20);
+  }
+};
+
+const extractDominantColor = (imageUrl) => {
+  if (!imageUrl || typeof imageUrl !== "string") return Promise.resolve(null);
+  if (imageColorCache.has(imageUrl)) {
+    return Promise.resolve(imageColorCache.get(imageUrl));
+  }
+  return new Promise((resolve) => {
+    colorExtractionQueue.push({ imageUrl, resolve });
+    if (!isProcessingColorQueue) {
+      if (typeof requestIdleCallback !== "undefined") {
+        requestIdleCallback(processColorQueue, { timeout: 100 });
+      } else {
+        setTimeout(processColorQueue, 20);
+      }
+    }
+  });
 };
 
 const htmlCache = {};
@@ -189,12 +391,106 @@ document.addEventListener("DOMContentLoaded", () => {
   const indicator = document.getElementById("sidebar-indicator");
 
   let currentSettings = getSettings();
-  applyTheme(currentSettings.theme || "base");
+  applyTheme(currentSettings.theme || "purple", true);
   loadTranslations(currentSettings.language || "en");
   applyTranslationsToDOM(document.body);
 
+  const splashEl = document.getElementById("splash-screen");
+  if (typeof SplashManager !== "undefined" && SplashManager.init) {
+    SplashManager.init(splashEl);
+  }
+
+  if (currentSettings.skipSplashScreen) {
+    if (typeof SplashManager !== "undefined") SplashManager.hide();
+  } else if (typeof SplashManager !== "undefined") {
+    SplashManager.setProgress(25, t("splash_status_init"));
+  }
+
+  let gbIdleTimer = null;
+
+  const openLightbox = (imgSrc) => {
+    if (!imgSrc) return;
+    const lbModal = document.getElementById("gb-lightbox-modal");
+    const lbImg = document.getElementById("gb-lightbox-img");
+    if (lbModal && lbImg) {
+      lbImg.src = imgSrc;
+      lbModal.classList.add("active");
+      lbModal.style.display = "flex";
+    }
+  };
+
+  const closeLightbox = () => {
+    const lbModal = document.getElementById("gb-lightbox-modal");
+    if (lbModal) {
+      lbModal.classList.remove("active");
+      lbModal.style.display = "none";
+      const lbImg = document.getElementById("gb-lightbox-img");
+      if (lbImg) lbImg.src = "";
+    }
+  };
+
+  const initLightbox = () => {
+    const lbModal = document.getElementById("gb-lightbox-modal");
+    if (!lbModal) return;
+    lbModal.onclick = () => {
+      closeLightbox();
+    };
+    const lbClose = document.getElementById("gb-lightbox-close");
+    if (lbClose) {
+      lbClose.onclick = (e) => {
+        e.stopPropagation();
+        closeLightbox();
+      };
+    }
+    const lbImg = document.getElementById("gb-lightbox-img");
+    if (lbImg) {
+      lbImg.onclick = (e) => {
+        e.stopPropagation();
+        closeLightbox();
+      };
+    }
+  };
+
+  initLightbox();
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      const lbModal = document.getElementById("gb-lightbox-modal");
+      if (lbModal && (lbModal.classList.contains("active") || lbModal.style.display === "flex")) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeLightbox();
+        return;
+      }
+
+      const gbModal = document.getElementById("gb-modal");
+      if (gbModal && gbModal.classList.contains("active")) {
+        e.preventDefault();
+        gbModal.classList.remove("active");
+        clearTimeout(gbIdleTimer);
+        return;
+      }
+
+      const modModal = document.getElementById("mod-modal");
+      if (modModal && modModal.classList.contains("active")) {
+        e.preventDefault();
+        modModal.classList.remove("active");
+        return;
+      }
+
+      const varModal = document.getElementById("var-delete-modal");
+      if (varModal && varModal.classList.contains("active")) {
+        e.preventDefault();
+        varModal.classList.remove("active");
+        return;
+      }
+    }
+  });
+
   let currentModFilter = "all";
   let currentSearchQuery = "";
+  let currentCharacterFilter = "all";
+  let installedFilterDrawer = null;
 
   const moveIndicator = (activeItem) => {
     if (!indicator || !activeItem || !sidebar) return;
@@ -214,71 +510,48 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const updateActiveSidebarIndicator = () => {
+    const activeItem =
+      document.querySelector(".sidebar-item.active") ||
+      document.querySelector('.sidebar-item[data-page="installed"]') ||
+      document.querySelector(".sidebar-item");
+    if (activeItem) {
+      menuItems.forEach((i) => i.classList.remove("active"));
+      activeItem.classList.add("active");
+      moveIndicator(activeItem);
+    }
+  };
+
+  updateActiveSidebarIndicator();
+  setTimeout(updateActiveSidebarIndicator, 50);
+  setTimeout(updateActiveSidebarIndicator, 150);
+
   window.addEventListener("resize", () => {
     const activeItem = document.querySelector(".sidebar-item.active");
     if (activeItem) moveIndicator(activeItem);
   });
 
-  const customConfirm = (message, onConfirm) => {
-    let modal = document.getElementById("custom-confirm-modal");
-    if (!modal) {
-      modal = document.createElement("div");
-      modal.id = "custom-confirm-modal";
-      modal.className = "modal-overlay custom-confirm-overlay";
-      modal.innerHTML = `
-                <div class="modal-content confirm-box">
-                    <div class="confirm-icon">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                            <line x1="12" y1="9" x2="12" y2="13"/>
-                            <line x1="12" y1="17" x2="12.01" y2="17"/>
-                        </svg>
-                    </div>
-                    <h3 class="modal-title">${t('confirm_title')}</h3>
-                    <p id="custom-confirm-msg" class="modal-text"></p>
-                    <div class="confirm-actions">
-                        <button id="custom-confirm-cancel" class="btn-secondary">${t('confirm_cancel')}</button>
-                        <button id="custom-confirm-ok" class="btn-danger">${t('confirm_delete')}</button>
-                    </div>
-                </div>
-            `;
-      document.body.appendChild(modal);
+  const customConfirm = (message, onConfirm, options = {}) => {
+    if (window.Modal) {
+      window.Modal.confirm(Object.assign({
+        title: t('confirm_title'),
+        message: message,
+        confirmText: t('confirm_delete'),
+        cancelText: t('confirm_cancel'),
+        type: "danger",
+        onConfirm: onConfirm
+      }, options));
+    } else if (confirm(message)) {
+      if (typeof onConfirm === "function") onConfirm();
     }
-
-    document.getElementById("custom-confirm-msg").textContent = message;
-    modal.style.display = "flex";
-
-    const confirmBox = modal.querySelector(".confirm-box");
-    confirmBox.style.animation = "none";
-    void confirmBox.offsetWidth;
-    confirmBox.style.animation =
-      "modalFadeIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards";
-
-    const btnOk = document.getElementById("custom-confirm-ok");
-    const btnCancel = document.getElementById("custom-confirm-cancel");
-
-    const newBtnOk = btnOk.cloneNode(true);
-    const newBtnCancel = btnCancel.cloneNode(true);
-    btnOk.replaceWith(newBtnOk);
-    btnCancel.replaceWith(newBtnCancel);
-
-    newBtnOk.onclick = () => {
-      modal.style.display = "none";
-      onConfirm();
-    };
-    newBtnCancel.onclick = () => {
-      modal.style.display = "none";
-    };
-
-    modal.onclick = (e) => {
-      if (e.target === modal) modal.style.display = "none";
-    };
   };
 
   const loadPage = async (pageName) => {
     isGroupDrawerOpen = false;
     selectedModsForGroup = new Set();
     editingGroupId = null;
+    if (installedFilterDrawer) installedFilterDrawer.isOpen = false;
+    if (sideMenuDownload) sideMenuDownload.isOpen = false;
     try {
       let html = htmlCache[pageName];
       let css = pageCssMap[pageName];
@@ -326,13 +599,17 @@ document.addEventListener("DOMContentLoaded", () => {
       if (pageName === "installed") initInstalledMods();
       if (pageName === "download") initGameBananaCatalog();
       if (pageName === "downloads") initDownloadsTab();
+
+      if (typeof CustomDropdown !== "undefined") {
+        CustomDropdown.initAll(contentContainer);
+      }
     } catch (error) {
       contentContainer.innerHTML = `<h2 style="color: var(--color-red);">${t('err_page_load')}</h2>`;
     }
   };
 
   function getSettings() {
-    const defaultSettings = { nsfwMode: "show", language: "en", theme: "base" };
+    const defaultSettings = { nsfwMode: "show", language: "en", theme: "purple" };
 
     if (!fs.existsSync(settingsFilePath)) {
       fs.writeFileSync(
@@ -349,9 +626,7 @@ document.addEventListener("DOMContentLoaded", () => {
         settings.language = "en";
       }
 
-      if (!settings.theme) {
-        settings.theme = "base";
-      }
+      settings.theme = mapLegacyTheme(settings.theme || "purple");
 
       return settings;
     } catch (e) {
@@ -374,6 +649,46 @@ document.addEventListener("DOMContentLoaded", () => {
     editingGroupId = null;
     const filterSelect = document.getElementById("mods-filter");
     const searchInput = document.getElementById("mods-search");
+    const filterBtn = document.getElementById("installed-filter-btn");
+
+    if (!installedFilterDrawer) {
+      installedFilterDrawer = new InstalledFilterDrawer({
+        containerId: "installed-drawer-container",
+        language: currentSettings.language || "ru",
+        t: t,
+        onFilterChange: (charName) => {
+          currentCharacterFilter = charName || "all";
+          renderModsGrid();
+        },
+      });
+    } else {
+      installedFilterDrawer.setLanguage(currentSettings.language || "ru");
+      installedFilterDrawer.t = t;
+      installedFilterDrawer.onFilterChange = (charName) => {
+        currentCharacterFilter = charName || "all";
+        renderModsGrid();
+      };
+    }
+    installedFilterDrawer.render();
+
+    if (filterBtn) {
+      filterBtn.onclick = () => {
+        if (installedFilterDrawer) {
+          if (!installedFilterDrawer.isOpen && isGroupDrawerOpen) {
+            const btnManage = document.getElementById("btn-group-manage");
+            const drawer = document.getElementById("group-side-drawer");
+            const pageContainer = document.querySelector(".installed-page-container");
+            isGroupDrawerOpen = false;
+            if (drawer) drawer.classList.remove("open");
+            if (btnManage) btnManage.classList.remove("active");
+            if (pageContainer) pageContainer.classList.remove("group-mode-active");
+            resetGroupEditMode();
+          }
+          installedFilterDrawer.toggle();
+        }
+      };
+    }
+
     if (filterSelect) {
       filterSelect.value = currentModFilter;
       filterSelect.onchange = (e) => {
@@ -381,11 +696,15 @@ document.addEventListener("DOMContentLoaded", () => {
         renderModsGrid();
       };
     }
+    let searchDebounceTimeout = null;
     if (searchInput) {
       searchInput.value = currentSearchQuery;
       searchInput.oninput = (e) => {
         currentSearchQuery = e.target.value;
-        renderModsGrid();
+        clearTimeout(searchDebounceTimeout);
+        searchDebounceTimeout = setTimeout(() => {
+          renderModsGrid();
+        }, 150);
       };
     }
     renderModsGrid();
@@ -400,15 +719,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  const showGroupToast = (msg) => {
-    const toast = document.getElementById("group-toast");
-    if (!toast) return;
-    toast.textContent = msg;
-    toast.classList.add("show");
-    clearTimeout(toast._timeout);
-    toast._timeout = setTimeout(() => {
-      toast.classList.remove("show");
-    }, 3500);
+  const showGroupToast = (msg, type = "success") => {
+    if (window.Toast) {
+      window.Toast.show({ message: msg, type: type });
+    } else {
+      const toast = document.getElementById("group-toast");
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.classList.add("show");
+      clearTimeout(toast._timeout);
+      toast._timeout = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 3500);
+    }
   };
 
   const renderGroupList = () => {
@@ -475,7 +798,8 @@ document.addEventListener("DOMContentLoaded", () => {
           }));
           renderModsGrid();
         } else if (res.reason === "invalid_path") {
-          alert(t('groups_err_path'));
+          if (window.Toast) window.Toast.error(t('groups_err_path'));
+          else alert(t('groups_err_path'));
         }
       });
 
@@ -566,6 +890,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const pageContainer = document.querySelector(".installed-page-container");
 
     const openDrawer = () => {
+      if (installedFilterDrawer && installedFilterDrawer.isOpen) {
+        installedFilterDrawer.toggle(false);
+      }
       isGroupDrawerOpen = true;
       if (drawer) drawer.classList.add("open");
       if (btnManage) btnManage.classList.add("active");
@@ -647,11 +974,17 @@ document.addEventListener("DOMContentLoaded", () => {
       else pageContainer.classList.remove("group-mode-active");
     }
 
-    const { validPath, totalCount, mods } = modManager.getMods(
+    const { validPath, totalCount, characters, mods } = modManager.getMods(
       currentSettings.xxmiPath,
       currentModFilter,
       currentSearchQuery,
+      currentCharacterFilter,
+      currentSettings.language || "ru",
     );
+
+    if (installedFilterDrawer) {
+      installedFilterDrawer.setCharacters(characters);
+    }
 
     if (!validPath || totalCount === 0) {
       grid.innerHTML = "";
@@ -669,11 +1002,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     emptyState.style.display = "none";
     grid.innerHTML = "";
+    const fragment = document.createDocumentFragment();
 
     mods.forEach((mod, index) => {
+      const isNsfw = !!mod.nsfw;
+
+      if (isNsfw && currentSettings.nsfwMode === "hide") return;
+
+      const isLocalBlurActive =
+        currentSettings.nsfwMode === "blur" ||
+        currentSettings.nsfwMode === "blur_local_only";
+      const isNsfwBlur = isNsfw && isLocalBlurActive;
+
       const card = document.createElement("div");
       const isSelected = selectedModsForGroup.has(mod.name);
-      card.className = `mod-card${isSelected ? " selected-for-group" : ""}`;
+      card.className = `mod-card${isSelected ? " selected-for-group" : ""}${isNsfwBlur ? " has-nsfw-blur" : ""}`;
       card.style.setProperty("--card-opacity", mod.active ? "1" : "0.6");
       card.style.animationDelay = `${Math.min(index, 12) * 0.025}s`;
 
@@ -689,12 +1032,37 @@ document.addEventListener("DOMContentLoaded", () => {
         bgStyle = `background-image: url('${safeUrl}');`;
       }
 
+      const hasMultipleVars = mod.variations && mod.variations.length > 1;
+      const varTagHtml = hasMultipleVars
+        ? `<div class="mod-vars-tag" title="${t('mod_var_count', { count: mod.variations.length })}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+            <span>${t('mod_var_count', { count: mod.variations.length })}</span>
+          </div>`
+        : "";
+
+      const charDisplayName = mod.characterLocalized || mod.character;
+      const charBadgeHtml = charDisplayName
+        ? `<div class="mod-char-badge" title="${t('installed_char_badge_title', { name: charDisplayName })}" data-char="${encodeURIComponent(mod.character || "")}" data-id="${mod.characterId || ""}" data-loc="${encodeURIComponent(charDisplayName)}">
+            <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            <span>${charDisplayName}</span>
+          </div>`
+        : "";
+
+      const activeVarHtml =
+        mod.activeVariation && hasMultipleVars
+          ? `<div class="mod-active-var-name" title="${mod.activeVariation}">[${mod.activeVariation}]</div>`
+          : "";
+
       card.innerHTML = `
         <div class="mod-select-indicator">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
         </div>
-        <div class="mod-preview" style="${bgStyle} cursor: pointer;">
-          ${mod.previewUrl ? "" : `<div class="mod-placeholder">${t('mod_no_photo')}</div>`}
+        <div class="mod-preview-wrapper">
+          <div class="mod-preview ${isNsfwBlur ? "nsfw-blur" : ""}" style="${bgStyle} cursor: pointer;">
+            ${varTagHtml}
+            ${charBadgeHtml}
+            ${mod.previewUrl ? "" : `<div class="mod-placeholder">${t('mod_no_photo')}</div>`}
+          </div>
         </div>
         <div class="mod-footer">
           <button class="mod-toggle-btn ${mod.active ? "active" : ""}" title="${mod.active ? t('mod_turn_off') : t('mod_turn_on')}">
@@ -702,12 +1070,43 @@ document.addEventListener("DOMContentLoaded", () => {
           </button>
           <div class="mod-name-container">
             <div class="mod-name" title="${mod.name}">${mod.name}</div>
+            ${activeVarHtml}
           </div>
           <button class="mod-delete-btn" title="${t('mod_delete_forever')}">
             ${iconDelete}
           </button>
         </div>
       `;
+
+      if (mod.previewUrl) {
+        const safeUrl = encodeURI(mod.previewUrl)
+          .replace(/'/g, "%27")
+          .replace(/"/g, "%22");
+        card.style.setProperty("--mod-bg-image", `url('${safeUrl}')`);
+        card.classList.add("has-bg-image");
+
+        extractDominantColor(mod.previewUrl).then((color) => {
+          if (color && color.rgb1) {
+            card.style.setProperty("--mod-color", color.rgb1);
+            card.style.setProperty("--mod-color-1", color.rgb1);
+            card.style.setProperty("--mod-color-2", color.rgb2 || color.rgb1);
+            card.classList.add("has-dynamic-color");
+          }
+        });
+      }
+
+      const charBadgeEl = card.querySelector(".mod-char-badge");
+      if (charBadgeEl) {
+        charBadgeEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const rawChar = decodeURIComponent(charBadgeEl.dataset.char);
+          const rawLoc = decodeURIComponent(charBadgeEl.dataset.loc);
+          const rawId = charBadgeEl.dataset.id ? parseInt(charBadgeEl.dataset.id) : null;
+          if (installedFilterDrawer) {
+            installedFilterDrawer.setSelectedCharacter(rawChar, rawId, rawLoc);
+          }
+        });
+      }
 
       const toggleSelection = (e) => {
         if (e) e.stopPropagation();
@@ -726,13 +1125,16 @@ document.addEventListener("DOMContentLoaded", () => {
         selectIndicator.addEventListener("click", toggleSelection);
       }
 
-      card.querySelector(".mod-preview").addEventListener("click", (e) => {
-        if (isGroupDrawerOpen) {
-          toggleSelection(e);
-        } else {
-          openModModal(mod);
-        }
-      });
+      const previewClickEl = card.querySelector(".mod-preview-wrapper") || card.querySelector(".mod-preview");
+      if (previewClickEl) {
+        previewClickEl.addEventListener("click", (e) => {
+          if (isGroupDrawerOpen) {
+            toggleSelection(e);
+          } else {
+            openModModal(mod);
+          }
+        });
+      }
 
       const toggleBtn = card.querySelector(".mod-toggle-btn");
       toggleBtn.addEventListener("click", (e) => {
@@ -755,35 +1157,44 @@ document.addEventListener("DOMContentLoaded", () => {
             toggleBtn.title = mod.active ? t('mod_turn_off') : t('mod_turn_on');
             toggleBtn.innerHTML = mod.active ? iconActive : iconInactive;
           }
-        } else
-          alert(t('mod_move_err'));
+        } else {
+          if (window.Toast) window.Toast.error(t('mod_move_err'));
+          else alert(t('mod_move_err'));
+        }
       });
 
       const deleteBtn = card.querySelector(".mod-delete-btn");
       deleteBtn.addEventListener("click", (e) => {
         e.stopPropagation();
 
-        customConfirm(
-          t('mod_delete_confirm', { name: mod.name }),
-          () => {
-            const deleted = modManager.deleteMod(
-              currentSettings.xxmiPath,
-              mod.name,
-              mod.active,
-            );
-            if (deleted) {
-              selectedModsForGroup.delete(mod.name);
-              updateGroupSelectionUI();
-              renderModsGrid();
-            } else {
-              alert(t('mod_delete_err'));
-            }
-          },
-        );
+        if (mod.variations && mod.variations.length > 1) {
+          openVarDeleteModal(mod);
+        } else {
+          customConfirm(
+            t('mod_delete_confirm', { name: mod.name }),
+            () => {
+              const deleted = modManager.deleteMod(
+                currentSettings.xxmiPath,
+                mod.name,
+                mod.active,
+              );
+              if (deleted) {
+                selectedModsForGroup.delete(mod.name);
+                updateGroupSelectionUI();
+                renderModsGrid();
+              } else {
+                if (window.Toast) window.Toast.error(t('mod_delete_err'));
+                else alert(t('mod_delete_err'));
+              }
+            },
+          );
+        }
       });
 
-      grid.appendChild(card);
+      fragment.appendChild(card);
     });
+
+    grid.appendChild(fragment);
   };
 
   const openModModal = (mod) => {
@@ -796,6 +1207,120 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("modal-status").style.color = mod.active
       ? "#4CAF50"
       : "#f44336";
+
+    const charRow = document.getElementById("modal-char-row");
+    const charBadge = document.getElementById("modal-char-badge");
+    const editCharBtn = document.getElementById("modal-edit-char-btn");
+    const charPicker = document.getElementById("modal-char-picker");
+    const charPickerSearch = document.getElementById("modal-char-picker-search");
+    const charPickerList = document.getElementById("modal-char-picker-list");
+
+    const updateCharDisplay = () => {
+      const charDisplayName = mod.characterLocalized || mod.character;
+      if (charRow && charBadge) {
+        charRow.style.display = "flex";
+        charBadge.textContent = `${t('modal_character')}: ${charDisplayName || t('modal_char_unassigned')}`;
+      }
+    };
+
+    if (charPicker) {
+      charPicker.style.display = "none";
+    }
+
+    const renderCharPickerList = (searchQuery = "") => {
+      if (!charPickerList) return;
+      const allOptions = modManager.getAvailableCharactersAndCategories(currentSettings.language || "ru");
+      const searchLower = (searchQuery || "").trim().toLowerCase();
+
+      const filtered = allOptions.filter(item => {
+        if (!searchLower) return true;
+        const inName = (item.name || "").toLowerCase().includes(searchLower);
+        const inLoc = (item.localizedName || "").toLowerCase().includes(searchLower);
+        const inCat = (item.category || "").toLowerCase().includes(searchLower);
+        return inName || inLoc || inCat;
+      });
+
+      if (filtered.length === 0) {
+        charPickerList.innerHTML = `<div style="padding: 10px; color: var(--text-muted); font-size: 0.8rem; text-align: center;">${t('gb_search_empty')}</div>`;
+        return;
+      }
+
+      charPickerList.innerHTML = filtered.map(item => {
+        const isSelected = (mod.character && mod.character.toLowerCase() === item.name.toLowerCase()) || (mod.characterId && mod.characterId === item.id);
+        const fallbackIcon = item.isBangboo ? "https://images.gamebanana.com/img/ico/ModCategory/669c13bb037b1.png" : "https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif";
+        const iconSrc = item.iconUrl || fallbackIcon;
+        const isSpecial = item.isOther;
+
+        return `
+          <div class="modal-char-picker-item ${isSelected ? "active" : ""}" data-name="${encodeURIComponent(item.name)}" data-loc="${encodeURIComponent(item.localizedName)}" data-id="${item.id || ""}" data-cat="${encodeURIComponent(item.category || "")}">
+            <div class="modal-char-picker-left">
+              ${isSpecial ? `<span style="font-size: 1.1rem; width: 22px; text-align: center;">📁</span>` : `<img class="modal-char-picker-avatar" src="${iconSrc}" alt="" onerror="this.onerror=null; this.src='${fallbackIcon}';">`}
+              <span class="modal-char-picker-name">${item.localizedName || item.name}</span>
+            </div>
+            <span class="modal-char-picker-cat-badge">${item.category || ""}</span>
+          </div>
+        `;
+      }).join("");
+
+      charPickerList.querySelectorAll(".modal-char-picker-item").forEach(itemEl => {
+        itemEl.onclick = () => {
+          const rawName = decodeURIComponent(itemEl.dataset.name);
+          const rawLoc = decodeURIComponent(itemEl.dataset.loc);
+          const rawId = itemEl.dataset.id ? parseInt(itemEl.dataset.id) : null;
+          const rawCat = decodeURIComponent(itemEl.dataset.cat);
+
+          modManager.setModMetadata(mod.name, {
+            character: rawName,
+            characterId: rawId,
+            category: rawCat
+          }, mod.paths);
+
+          mod.character = rawName;
+          mod.characterLocalized = rawLoc;
+          mod.characterId = rawId;
+          mod.category = rawCat;
+
+          updateCharDisplay();
+          if (charPicker) charPicker.style.display = "none";
+          renderModsGrid();
+          showGroupToast(t('modal_char_updated', { name: rawLoc }));
+        };
+      });
+    };
+
+    if (editCharBtn && charPicker) {
+      editCharBtn.onclick = () => {
+        const isHidden = charPicker.style.display === "none";
+        charPicker.style.display = isHidden ? "flex" : "none";
+        if (isHidden) {
+          if (charPickerSearch) {
+            charPickerSearch.value = "";
+            setTimeout(() => charPickerSearch.focus(), 100);
+          }
+          renderCharPickerList("");
+        }
+      };
+    }
+
+    if (charPickerSearch) {
+      charPickerSearch.oninput = (e) => {
+        renderCharPickerList(e.target.value);
+      };
+    }
+
+    updateCharDisplay();
+
+    const nsfwCheckbox = document.getElementById("modal-nsfw-checkbox");
+    if (nsfwCheckbox) {
+      nsfwCheckbox.checked = !!mod.nsfw;
+      nsfwCheckbox.onchange = () => {
+        const isChecked = nsfwCheckbox.checked;
+        mod.nsfw = isChecked;
+        modManager.setModMetadata(mod.name, { nsfw: isChecked }, mod.paths);
+        updateModalMedia();
+        renderModsGrid();
+      };
+    }
 
     const linkEl = document.getElementById("modal-source-link");
     if (mod.sourceUrl) {
@@ -811,96 +1336,645 @@ document.addEventListener("DOMContentLoaded", () => {
       linkEl.style.display = "none";
     }
 
-    const imgContainer = document.getElementById("modal-image-container");
-    if (mod.previewUrl) {
-      const safeUrl = encodeURI(mod.previewUrl)
-        .replace(/'/g, "%27")
-        .replace(/"/g, "%22");
-      imgContainer.innerHTML = `<img src="${safeUrl}" alt="${mod.name}">`;
-    } else
-      imgContainer.innerHTML = `<div style="padding: 40px; background: rgba(255,255,255,0.05); border-radius: 8px; color: var(--color-muted);">${t('mod_no_image')}</div>`;
+    const updateModalMedia = () => {
+      const imgContainer = document.getElementById("modal-image-container");
+      if (!imgContainer) return;
+      imgContainer.style.position = "relative";
+      const nsfwBadgeHtml = mod.nsfw
+        ? `<div class="nsfw-badge" style="position: absolute; top: 12px; right: 12px; z-index: 10;">18+</div>`
+        : "";
+      if (mod.previewUrl) {
+        const safeUrl = encodeURI(mod.previewUrl)
+          .replace(/'/g, "%27")
+          .replace(/"/g, "%22");
+        imgContainer.innerHTML = `
+          ${nsfwBadgeHtml}
+          <img src="${safeUrl}" alt="${mod.name}" style="cursor: pointer;" title="Нажмите для открытия в полный размер">
+        `;
+        const imgEl = imgContainer.querySelector("img");
+        if (imgEl) {
+          imgEl.onclick = () => openLightbox(mod.previewUrl);
+        }
+      } else {
+        imgContainer.innerHTML = `
+          ${nsfwBadgeHtml}
+          <div style="padding: 40px; background: rgba(255,255,255,0.05); border-radius: 8px; color: var(--color-muted);">${t('mod_no_image')}</div>
+        `;
+      }
 
-    const desc = document.getElementById("modal-description");
-    if (mod.description) {
-      desc.style.display = "block";
-      desc.textContent = mod.description;
-    } else desc.style.display = "none";
+      const desc = document.getElementById("modal-description");
+      const descText = mod.description || (modManager.getModDescription ? modManager.getModDescription(mod) : "");
+      if (descText) {
+        desc.style.display = "block";
+        desc.textContent = descText;
+      } else {
+        desc.style.display = "none";
+      }
+    };
 
-    modal.style.display = "flex";
+    updateModalMedia();
+
+    const varsBox = document.getElementById("modal-variations-box");
+    const varsList = document.getElementById("modal-variations-list");
+    const varsCount = document.getElementById("modal-variations-count");
+
+    const renderModalVars = () => {
+      if (varsBox && varsList && mod.variations && mod.variations.length > 0) {
+        varsBox.style.display = "block";
+        if (varsCount) varsCount.textContent = mod.variations.length;
+        varsList.innerHTML = "";
+
+        mod.variations.forEach((varName) => {
+          const isActiveVar = varName === mod.activeVariation;
+          const item = document.createElement("div");
+          item.className = `var-item${isActiveVar ? " var-item-active" : ""}`;
+          item.innerHTML = `
+            <div class="var-info">
+              <span class="var-name" title="${varName}">${varName}</span>
+              ${isActiveVar ? `<span class="var-active-badge">${t('mod_var_active')}</span>` : ""}
+            </div>
+            <div class="var-actions">
+              <button class="btn-var-delete" data-var="${varName}" title="${t('confirm_delete')}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"/></svg>
+              </button>
+            </div>
+          `;
+
+          item.addEventListener("click", (e) => {
+            if (e.target.closest(".btn-var-delete")) return;
+            if (mod.activeVariation === varName) return;
+
+            const success = modManager.switchModVariation(
+              currentSettings.xxmiPath,
+              mod.name,
+              varName,
+            );
+            if (success) {
+              mod.activeVariation = varName;
+              const { mods } = modManager.getMods(
+                currentSettings.xxmiPath,
+                "all",
+                "",
+              );
+              const updatedMod = mods.find((m) => m.name === mod.name);
+              if (updatedMod) {
+                mod.previewUrl = updatedMod.previewUrl;
+                mod.description = updatedMod.description;
+                mod.variations = updatedMod.variations;
+                mod.activeVariation = updatedMod.activeVariation;
+              }
+              updateModalMedia();
+              renderModalVars();
+              renderModalKeybinds();
+              renderModsGrid();
+              showGroupToast(t('mod_var_switched', { varName: varName }));
+            }
+          });
+
+          const delBtn = item.querySelector(".btn-var-delete");
+          if (delBtn) {
+            delBtn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              customConfirm(
+                t('mod_delete_single_var_confirm', {
+                  varName: varName,
+                  modName: mod.name,
+                }),
+                () => {
+                  const res = modManager.deleteModVariation(
+                    currentSettings.xxmiPath,
+                    mod.name,
+                    varName,
+                    mod.active,
+                  );
+                  if (res.success) {
+                    if (res.remainingCount === 0) {
+                      modal.style.display = "none";
+                      selectedModsForGroup.delete(mod.name);
+                      updateGroupSelectionUI();
+                      renderModsGrid();
+                    } else {
+                      const { mods } = modManager.getMods(
+                        currentSettings.xxmiPath,
+                        "all",
+                        "",
+                      );
+                      const updatedMod = mods.find((m) => m.name === mod.name);
+                      if (updatedMod) {
+                        mod.previewUrl = updatedMod.previewUrl;
+                        mod.description = updatedMod.description;
+                        mod.variations = updatedMod.variations;
+                        mod.activeVariation = updatedMod.activeVariation;
+                      }
+                      updateModalMedia();
+                      renderModalVars();
+                      renderModalKeybinds();
+                      renderModsGrid();
+                    }
+                  } else {
+                    if (window.Toast) window.Toast.error(t('mod_delete_err'));
+                    else alert(t('mod_delete_err'));
+                  }
+                },
+              );
+            });
+          }
+
+          varsList.appendChild(item);
+        });
+      } else if (varsBox) {
+        varsBox.style.display = "none";
+      }
+    };
+
+
+    const keybindsList = document.getElementById("modal-keybinds-list");
+    const keybindsCount = document.getElementById("modal-keybinds-count");
+
+    const renderModalKeybinds = () => {
+      if (!keybindsList) return;
+      const binds = modManager.getModKeybinds(
+        mod.name,
+        mod.activeVariation,
+        currentSettings.xxmiPath,
+      );
+
+      if (keybindsCount) {
+        keybindsCount.textContent = binds.length;
+        keybindsCount.style.display = binds.length > 0 ? "inline-flex" : "none";
+      }
+
+      if (binds.length === 0) {
+        keybindsList.innerHTML = `<div class="modal-keybind-empty">${t('mod_keybinds_empty')}</div>`;
+        return;
+      }
+
+      keybindsList.innerHTML = binds
+        .map((b) => {
+          const keysHtml = b.keys
+            .map((k) => `<kbd class="keycap">${k}</kbd>`)
+            .join('<span class="keycap-plus">+</span>');
+
+          const backKeysHtml =
+            b.backKeys && b.backKeys.length > 0
+              ? ` <span style="color:var(--text-muted);font-size:0.7rem;">/</span> ` +
+              b.backKeys
+                .map((k) => `<kbd class="keycap">${k}</kbd>`)
+                .join('<span class="keycap-plus">+</span>')
+              : "";
+
+          const optionsHtml =
+            b.options && b.options.length > 0
+              ? `<div class="modal-keybind-options">
+                  ${b.options.map((opt) => `<span class="modal-keybind-opt-pill">${opt}</span>`).join("")}
+                </div>`
+              : "";
+
+          return `
+            <div class="modal-keybind-item">
+              <div class="modal-keybind-top">
+                <span class="modal-keybind-name">${b.name}</span>
+                <div class="modal-keybind-keys">
+                  ${keysHtml}${backKeysHtml}
+                </div>
+              </div>
+              ${optionsHtml ? `<div class="modal-keybind-bottom">${optionsHtml}</div>` : ""}
+            </div>
+          `;
+        })
+        .join("");
+    };
+
+    renderModalVars();
+    renderModalKeybinds();
+    if (modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+    }
+    modal.classList.add("active");
+  };
+
+  const openVarDeleteModal = (mod) => {
+    let modal = document.getElementById("var-delete-modal");
+    if (!modal) return;
+
+    if (modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+    }
+
+    const titleEl = document.getElementById("var-delete-title");
+    const descEl = document.getElementById("var-delete-desc");
+    const listEl = document.getElementById("var-delete-list");
+    const cancelBtn = document.getElementById("var-delete-cancel");
+    const delSelectedBtn = document.getElementById("var-delete-selected");
+    const delAllBtn = document.getElementById("var-delete-all");
+    const closeBtn = document.getElementById("var-delete-close");
+
+    if (titleEl)
+      titleEl.textContent = `${t('mod_delete_var_title')}: ${mod.name}`;
+    if (descEl) descEl.textContent = t('mod_delete_var_desc');
+    listEl.innerHTML = "";
+
+    const selectedVars = new Set();
+
+    const updateBtnState = () => {
+      if (delSelectedBtn) {
+        delSelectedBtn.textContent = t('mod_delete_selected_vars', {
+          count: selectedVars.size,
+        });
+        delSelectedBtn.disabled = selectedVars.size === 0;
+        delSelectedBtn.style.opacity = selectedVars.size === 0 ? "0.5" : "1";
+        delSelectedBtn.style.cursor =
+          selectedVars.size === 0 ? "not-allowed" : "pointer";
+      }
+    };
+
+    mod.variations.forEach((varName) => {
+      const isActiveVar = varName === mod.activeVariation;
+      const item = document.createElement("div");
+      item.className = "var-delete-item";
+      item.innerHTML = `
+        <input type="checkbox" class="var-delete-chk">
+        <span class="var-delete-item-name">${varName}</span>
+        ${isActiveVar ? `<span class="var-active-badge">${t('mod_var_active')}</span>` : ""}
+      `;
+
+      const chk = item.querySelector("input[type='checkbox']");
+      const toggleCheck = (checked) => {
+        chk.checked = checked;
+        if (checked) {
+          selectedVars.add(varName);
+          item.classList.add("selected");
+        } else {
+          selectedVars.delete(varName);
+          item.classList.remove("selected");
+        }
+        updateBtnState();
+      };
+
+      item.addEventListener("click", (e) => {
+        if (e.target === chk) {
+          toggleCheck(chk.checked);
+        } else {
+          toggleCheck(!chk.checked);
+        }
+      });
+
+      listEl.appendChild(item);
+    });
+
+    updateBtnState();
+    modal.classList.add("active");
+
+    const closeModal = () => {
+      modal.classList.remove("active");
+    };
+
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+    modal.onclick = (e) => {
+      if (e.target === modal) closeModal();
+    };
+
+    if (delSelectedBtn) {
+      delSelectedBtn.onclick = () => {
+        if (selectedVars.size === 0) return;
+
+        if (selectedVars.size === mod.variations.length) {
+          const deleted = modManager.deleteMod(
+            currentSettings.xxmiPath,
+            mod.name,
+            mod.active,
+          );
+          if (deleted) {
+            selectedModsForGroup.delete(mod.name);
+            updateGroupSelectionUI();
+            renderModsGrid();
+            closeModal();
+            if (window.Toast) window.Toast.success(t('mod_deleted') || "Mod deleted");
+          } else {
+            if (window.Toast) window.Toast.error(t('mod_delete_err'));
+            else alert(t('mod_delete_err'));
+          }
+        } else {
+          for (const v of selectedVars) {
+            modManager.deleteModVariation(
+              currentSettings.xxmiPath,
+              mod.name,
+              v,
+              mod.active,
+            );
+          }
+          renderModsGrid();
+          closeModal();
+          if (window.Toast) window.Toast.success(t('mod_delete_selected_vars', { count: selectedVars.size }) || "Variations deleted");
+        }
+      };
+    }
+
+    if (delAllBtn) {
+      delAllBtn.onclick = () => {
+        customConfirm(
+          t('mod_delete_confirm', { name: mod.name }),
+          () => {
+            const deleted = modManager.deleteMod(
+              currentSettings.xxmiPath,
+              mod.name,
+              mod.active,
+            );
+            if (deleted) {
+              selectedModsForGroup.delete(mod.name);
+              updateGroupSelectionUI();
+              renderModsGrid();
+              closeModal();
+              if (window.Toast) window.Toast.success(t('mod_deleted') || "Mod deleted");
+            } else {
+              if (window.Toast) window.Toast.error(t('mod_delete_err'));
+              else alert(t('mod_delete_err'));
+            }
+          },
+        );
+      };
+    }
   };
 
   const initModalLogic = () => {
     const modal = document.getElementById("mod-modal");
     const closeBtn = document.getElementById("modal-close");
     if (!modal || !closeBtn) return;
+
+    if (modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+    }
+
     const newCloseBtn = closeBtn.cloneNode(true);
     closeBtn.replaceWith(newCloseBtn);
     newCloseBtn.addEventListener("click", () => {
-      modal.style.display = "none";
+      modal.classList.remove("active");
     });
     modal.onclick = (e) => {
-      if (e.target === modal) modal.style.display = "none";
+      if (e.target === modal) {
+        modal.classList.remove("active");
+      }
     };
   };
 
   let gbPage = 1;
   let gbLoading = false;
   let gbHasMore = true;
+  let gbSearchQuery = "";
+  let gbSortVal = "default";
+  let gbAbortController = null;
+
+  let sideMenuDownload = null;
 
   const initGameBananaCatalog = () => {
     const sortSelect = document.getElementById("gb-sort");
     const refreshBtn = document.getElementById("gb-refresh-btn");
     const searchInput = document.getElementById("gb-search");
     const grid = document.getElementById("gb-grid");
+    const filterBtn = document.getElementById("gb-filter-btn");
 
     if (!grid) return;
 
+    if (sortSelect) {
+      sortSelect.value = gbSortVal;
+    }
+    if (searchInput) {
+      searchInput.value = gbSearchQuery;
+    }
+
+    const updateActiveFilterUI = (categoryId, categoryName) => {
+      const btn = document.getElementById("gb-filter-btn");
+      const badge = document.getElementById("gb-filter-badge");
+      const bar = document.getElementById("gb-active-filter-bar");
+
+      if (categoryId) {
+        if (btn) btn.classList.add("has-active-filter");
+        if (badge) {
+          badge.style.display = "inline-block";
+          badge.textContent = "1";
+        }
+        if (bar) {
+          bar.style.display = "flex";
+          bar.innerHTML = `
+            <div class="gb-filter-pill">
+              <span>${t('gb_active_filter_tag', { name: categoryName })}</span>
+              <button id="gb-clear-tag-btn" class="gb-filter-pill-btn" title="${t('gb_filter_reset')}">✕</button>
+            </div>
+          `;
+          const clearTagBtn = document.getElementById("gb-clear-tag-btn");
+          if (clearTagBtn) {
+            clearTagBtn.onclick = () => {
+              if (sideMenuDownload) sideMenuDownload.setCategory(null, null);
+            };
+          }
+        }
+      } else {
+        if (btn) btn.classList.remove("has-active-filter");
+        if (badge) badge.style.display = "none";
+        if (bar) {
+          bar.style.display = "none";
+          bar.innerHTML = "";
+        }
+      }
+    };
+
+    const handleFilterChange = (filters) => {
+      gbSortVal = filters.sort;
+      const sSelect = document.getElementById("gb-sort");
+      if (sSelect && sSelect.value !== filters.sort) {
+        sSelect.value = filters.sort;
+      }
+      if (filters.categoryId) {
+        gbSearchQuery = "";
+        const sInput = document.getElementById("gb-search");
+        if (sInput) sInput.value = "";
+      }
+      updateActiveFilterUI(filters.categoryId, filters.categoryName);
+      fetchGBMods(false);
+    };
+
+    const handleNsfwChange = (mode) => {
+      currentSettings.nsfwMode = mode;
+      try {
+        fs.writeFileSync(settingsFilePath, JSON.stringify(currentSettings, null, 2), "utf-8");
+      } catch (e) { }
+      const settingsNsfw = document.getElementById("setting-nsfw-mode");
+      if (settingsNsfw) settingsNsfw.value = mode;
+    };
+
+    if (!sideMenuDownload) {
+      sideMenuDownload = new SideMenuDownload({
+        containerId: "gb-drawer-container",
+        currentSort: gbSortVal,
+        nsfwMode: currentSettings.nsfwMode || "hide",
+        language: currentSettings.language || "ru",
+        t: (k, p) => t(k, p),
+        onFilterChange: handleFilterChange,
+        onNsfwChange: handleNsfwChange
+      });
+      sideMenuDownload.init();
+    } else {
+      sideMenuDownload.currentLang = currentSettings.language || "ru";
+      sideMenuDownload.t = (k, p) => t(k, p);
+      sideMenuDownload.onFilterChange = handleFilterChange;
+      sideMenuDownload.onNsfwChange = handleNsfwChange;
+      sideMenuDownload.render();
+      updateActiveFilterUI(sideMenuDownload.selectedCategoryId, sideMenuDownload.selectedCategoryName);
+    }
+
+    if (filterBtn) {
+      filterBtn.onclick = () => sideMenuDownload.toggle();
+    }
+
+    const getCatIdFromObj = (obj) => {
+      if (!obj) return null;
+      if (obj._idRow) return parseInt(obj._idRow);
+      if (obj._sProfileUrl) {
+        const match = obj._sProfileUrl.match(/\/cats\/(\d+)/);
+        if (match) return parseInt(match[1]);
+      }
+      return null;
+    };
+
+    const matchesCategory = (record, targetCatId) => {
+      if (!targetCatId) return true;
+      const subId = getCatIdFromObj(record._aSubCategory);
+      const cId = getCatIdFromObj(record._aCategory);
+      const rootId = getCatIdFromObj(record._aRootCategory);
+      return subId === targetCatId || cId === targetCatId || rootId === targetCatId;
+    };
+
     const fetchGBMods = async (append = false) => {
-      if (gbLoading) return;
+      if (gbAbortController && !append) {
+        gbAbortController.abort();
+      }
+      gbAbortController = new AbortController();
+      const currentSignal = gbAbortController.signal;
+
       gbLoading = true;
       const loadingEl = document.getElementById("gb-loading");
-      if (loadingEl) loadingEl.style.display = "block";
+      if (loadingEl) loadingEl.style.display = "flex";
 
+      const currentGrid = document.getElementById("gb-grid");
       if (!append) {
         gbPage = 1;
         gbHasMore = true;
-        grid.innerHTML = "";
+        if (currentGrid) currentGrid.innerHTML = "";
       }
-      const sortVal = sortSelect ? sortSelect.value : "default";
-      const searchVal = searchInput ? searchInput.value.trim() : "";
+      const sortVal = gbSortVal || (sortSelect ? sortSelect.value : "default");
+      const searchVal = gbSearchQuery.trim();
+      const selectedCatId = sideMenuDownload ? sideMenuDownload.selectedCategoryId : null;
+      const selectedCatName = sideMenuDownload ? (sideMenuDownload.selectedCategoryName || "") : "";
+
+      let sortMap = {
+        default: "Generic_MostLiked",
+        new: "Generic_Newest",
+        updated: "Generic_LatestUpdated",
+        downloads: "Generic_MostDownloaded",
+        views: "Generic_MostViewed",
+        likes: "Generic_MostLiked",
+      };
+      let gbSort = sortMap[sortVal] || "Generic_MostLiked";
 
       const csvProps =
-        "_idRow,_sName,_aPreviewMedia,_nLikeCount,_tsDateUpdated,_tsDateAdded,_bContainsNsfw,_bIsNsfw,_bHasNsfw,_bMatureContent,_aContentRatings,_aCategory,_sDescription";
-      let url = "";
-      if (searchVal) {
-        url = `https://gamebanana.com/apiv11/Util/Search/Results?_sModelName=Mod&_idGameRow=19567&_sSearchString=${encodeURIComponent(searchVal)}&_nPage=${gbPage}&_nPerpage=30&_csvProperties=${csvProps}`;
-      } else {
-        let sortMap = {
-          default: "Generic_MostLiked",
-          new: "Generic_Newest",
-          updated: "Generic_LatestUpdated",
-          downloads: "Generic_MostDownloaded",
-          views: "Generic_MostViewed",
-          likes: "Generic_MostLiked",
-        };
-        let gbSort = sortMap[sortVal] || "Generic_MostLiked";
-        url = `https://gamebanana.com/apiv11/Mod/Index?_nPage=${gbPage}&_nPerpage=30&_aFilters[Generic_Game]=19567&_sSort=${gbSort}&_csvProperties=${csvProps}`;
-      }
+        "_idRow,_sName,_aPreviewMedia,_nLikeCount,_tsDateUpdated,_tsDateAdded,_bContainsNsfw,_bIsNsfw,_bHasNsfw,_bMatureContent,_sInitialVisibility,_aContentRatings,_aCategory,_aRootCategory,_aSubCategory,_sDescription";
 
       try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-        const data = await res.json();
-        const records = data._aRecords || [];
-        if (records.length < 30) gbHasMore = false;
+        let records = [];
+
+        if (searchVal && selectedCatId) {
+          const isRootCat = [30305, 30702, 30395, 30306].includes(selectedCatId);
+          if (isRootCat) {
+            const url = `https://gamebanana.com/apiv11/Util/Search/Results?_sModelName=Mod&_idGameRow=19567&_sSearchString=${encodeURIComponent(searchVal)}&_nPage=${gbPage}&_nPerpage=50&_csvProperties=${csvProps}`;
+            const res = await fetch(url, { signal: currentSignal });
+            if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+            const data = await res.json();
+            if (currentSignal.aborted) return;
+            records = (data._aRecords || []).filter((r) => matchesCategory(r, selectedCatId));
+            gbHasMore = false;
+          } else {
+
+            const p1 = fetch(
+              `https://gamebanana.com/apiv11/Mod/Index?_nPage=1&_nPerpage=50&_aFilters[Generic_Category]=${selectedCatId}&_csvProperties=${csvProps}`,
+              { signal: currentSignal }
+            );
+            const p2 = fetch(
+              `https://gamebanana.com/apiv11/Mod/Index?_nPage=2&_nPerpage=50&_aFilters[Generic_Category]=${selectedCatId}&_csvProperties=${csvProps}`,
+              { signal: currentSignal }
+            );
+            const p3 = fetch(
+              `https://gamebanana.com/apiv11/Mod/Index?_nPage=3&_nPerpage=50&_aFilters[Generic_Category]=${selectedCatId}&_csvProperties=${csvProps}`,
+              { signal: currentSignal }
+            );
+            const pSearch = fetch(
+              `https://gamebanana.com/apiv11/Util/Search/Results?_sModelName=Mod&_idGameRow=19567&_sSearchString=${encodeURIComponent(selectedCatName + " " + searchVal)}&_nPage=1&_nPerpage=50&_csvProperties=${csvProps}`,
+              { signal: currentSignal }
+            );
+
+            const [r1, r2, r3, rSearch] = await Promise.all([
+              p1.then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+              p2.then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+              p3.then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+              pSearch.then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+            ]);
+
+            if (currentSignal.aborted) return;
+
+            const seen = new Set();
+            const allItems = [];
+            [r1, r2, r3, rSearch].forEach((data) => {
+              if (data && data._aRecords) {
+                data._aRecords.forEach((item) => {
+                  if (!seen.has(item._idRow) && matchesCategory(item, selectedCatId)) {
+                    seen.add(item._idRow);
+                    allItems.push(item);
+                  }
+                });
+              }
+            });
+
+            const lowerQuery = searchVal.toLowerCase();
+            records = allItems.filter((m) => {
+              const inName = m._sName && m._sName.toLowerCase().includes(lowerQuery);
+              const inDesc = m._sDescription && m._sDescription.toLowerCase().includes(lowerQuery);
+              return inName || inDesc;
+            });
+            gbHasMore = false;
+          }
+        } else {
+          let url = "";
+          if (searchVal) {
+            url = `https://gamebanana.com/apiv11/Util/Search/Results?_sModelName=Mod&_idGameRow=19567&_sSearchString=${encodeURIComponent(searchVal)}&_nPage=${gbPage}&_nPerpage=30&_csvProperties=${csvProps}`;
+          } else if (selectedCatId) {
+            url = `https://gamebanana.com/apiv11/Mod/Index?_nPage=${gbPage}&_nPerpage=30&_aFilters[Generic_Category]=${selectedCatId}&_sSort=${gbSort}&_csvProperties=${csvProps}`;
+          } else {
+            url = `https://gamebanana.com/apiv11/Mod/Index?_nPage=${gbPage}&_nPerpage=30&_aFilters[Generic_Game]=19567&_sSort=${gbSort}&_csvProperties=${csvProps}`;
+          }
+
+          const res = await fetch(url, { signal: currentSignal });
+          if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+          const data = await res.json();
+          if (currentSignal.aborted) return;
+          records = data._aRecords || [];
+          if (records.length < 30) gbHasMore = false;
+        }
+
+        if (sideMenuDownload) {
+          sideMenuDownload.discoverNewSubcategories(records);
+        }
         renderGBGrid(records, append);
       } catch (err) {
-        if (!append)
-          grid.innerHTML =
+        if (err.name === "AbortError" || currentSignal.aborted) return;
+        const cGrid = document.getElementById("gb-grid");
+        if (!append && cGrid)
+          cGrid.innerHTML =
             `<div style="color: var(--color-red); grid-column: 1 / -1; text-align: center; margin-top: 20px;">${t('gb_load_err')}</div>`;
       } finally {
-        gbLoading = false;
-        if (loadingEl) loadingEl.style.display = "none";
+        if (!currentSignal.aborted) {
+          gbLoading = false;
+          if (loadingEl) loadingEl.style.display = "none";
+        }
       }
     };
 
@@ -920,18 +1994,27 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
 
-    grid.onscroll = (e) => checkScroll(e.target);
+    if (grid) grid.onscroll = (e) => checkScroll(e.target);
     const mainContent =
       document.getElementById("content-container") ||
       document.querySelector(".main-content");
     if (mainContent) mainContent.onscroll = (e) => checkScroll(e.target);
 
     if (refreshBtn) refreshBtn.onclick = () => fetchGBMods(false);
-    if (sortSelect) sortSelect.onchange = () => fetchGBMods(false);
+    if (sortSelect) {
+      sortSelect.onchange = () => {
+        gbSortVal = sortSelect.value;
+        if (sideMenuDownload) {
+          sideMenuDownload.updateSelectedSort(sortSelect.value);
+        }
+        fetchGBMods(false);
+      };
+    }
 
     let searchTimeout = null;
     if (searchInput) {
       searchInput.oninput = () => {
+        gbSearchQuery = searchInput.value;
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => fetchGBMods(false), 500);
       };
@@ -994,6 +2077,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    const fragment = document.createDocumentFragment();
+
     records.forEach((mod, index) => {
       const nsfwRegex =
         /\b(nsfw|18\+|nude|nudity|porn|sex|boobs|tits|ass|thicc|thick|naked|lewd)\b/i;
@@ -1012,14 +2097,20 @@ document.addEventListener("DOMContentLoaded", () => {
         mod._bContainsNsfw ||
         mod._bIsNsfw ||
         mod._bHasNsfw ||
-        mod._bMatureContent;
+        mod._bMatureContent ||
+        mod._sInitialVisibility === "warn" ||
+        mod._sInitialVisibility === "hide";
       const isNsfwText = nsfwRegex.test(textToScan);
       const isNsfw = isNsfwFlagged || isNsfwText;
 
       if (isNsfw && currentSettings.nsfwMode === "hide") return;
 
+      const isCatalogBlurActive =
+        currentSettings.nsfwMode === "blur" ||
+        currentSettings.nsfwMode === "blur_download_only";
+      const isNsfwBlur = isNsfw && isCatalogBlurActive;
       const card = document.createElement("div");
-      card.className = "mod-card";
+      card.className = `mod-card${isNsfwBlur ? " has-nsfw-blur" : ""}`;
       card.style.animationDelay = `${Math.min(index, 12) * 0.025}s`;
 
       let imgUrl = "";
@@ -1031,15 +2122,13 @@ document.addEventListener("DOMContentLoaded", () => {
         imgUrl =
           mod._aPreviewMedia._aImages[0]._sBaseUrl +
           "/" +
-          mod._aPreviewMedia._aImages[0]._sFile;
+          (mod._aPreviewMedia._aImages[0]._sFile220 || mod._aPreviewMedia._aImages[0]._sFile);
       }
 
-      const imgClass =
-        isNsfw && currentSettings.nsfwMode === "blur" ? "nsfw-blur" : "";
-      const nsfwBadgeHtml =
-        isNsfw && currentSettings.nsfwMode === "blur"
-          ? `<div class="nsfw-badge">18+</div>`
-          : "";
+      const imgClass = isNsfwBlur ? "nsfw-blur" : "";
+      const nsfwBadgeHtml = isNsfw
+        ? `<div class="nsfw-badge">18+</div>`
+        : "";
 
       const isDownloaded = modManager.isModDownloaded(
         currentSettings.xxmiPath,
@@ -1095,6 +2184,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
             `;
 
+      if (imgUrl) {
+        const safeImg = encodeURI(imgUrl)
+          .replace(/'/g, "%27")
+          .replace(/"/g, "%22");
+        card.style.setProperty("--mod-bg-image", `url('${safeImg}')`);
+        card.classList.add("has-bg-image");
+
+        extractDominantColor(imgUrl).then((color) => {
+          if (color && color.rgb1) {
+            card.style.setProperty("--mod-color", color.rgb1);
+            card.style.setProperty("--mod-color-1", color.rgb1);
+            card.style.setProperty("--mod-color-2", color.rgb2 || color.rgb1);
+            card.classList.add("has-dynamic-color");
+          }
+        });
+      }
+
       card.querySelector(".mod-preview-wrapper").onclick = () =>
         openGBModal(mod);
 
@@ -1104,21 +2210,69 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!isDownloaded && !isDownloading) openGBModal(mod);
       };
 
-      grid.appendChild(card);
+      fragment.appendChild(card);
     });
 
+    grid.appendChild(fragment);
     fetchBatchDownloads(records);
   };
 
-  let gbCarouselInterval = null;
   let gbImages = [];
   let gbImgIndex = 0;
+
+  const triggerSlideAnim = () => {
+    const imgEl = document.getElementById("gb-modal-img");
+    if (!imgEl) return;
+    imgEl.classList.remove("slide-anim");
+    void imgEl.offsetWidth;
+    imgEl.classList.add("slide-anim");
+  };
+
+  const showModalImage = (index) => {
+    if (!gbImages || gbImages.length === 0) return;
+    gbImgIndex = (index + gbImages.length) % gbImages.length;
+    const nextUrl = gbImages[gbImgIndex];
+    const imgEl = document.getElementById("gb-modal-img");
+    if (!imgEl) return;
+
+    imgEl.src = nextUrl;
+    triggerSlideAnim();
+
+    const nextIdx = (gbImgIndex + 1) % gbImages.length;
+    const prevIdx = (gbImgIndex - 1 + gbImages.length) % gbImages.length;
+    if (gbImages[nextIdx]) {
+      const p1 = new Image();
+      p1.src = gbImages[nextIdx];
+    }
+    if (gbImages[prevIdx]) {
+      const p2 = new Image();
+      p2.src = gbImages[prevIdx];
+    }
+  };
+
+  const startIdleTimer = () => {
+    clearTimeout(gbIdleTimer);
+    if (gbImages.length <= 1) return;
+    gbIdleTimer = setTimeout(() => {
+      showModalImage(gbImgIndex + 1);
+      startIdleTimer();
+    }, 10000);
+  };
+
+  const resetIdleTimer = () => {
+    clearTimeout(gbIdleTimer);
+    startIdleTimer();
+  };
 
   const openGBModal = async (mod) => {
     const modal = document.getElementById("gb-modal");
     if (!modal) return;
 
-    clearInterval(gbCarouselInterval);
+    if (modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+    }
+
+    clearTimeout(gbIdleTimer);
 
     document.getElementById("gb-modal-title").textContent = mod._sName;
     const linkEl = document.getElementById("gb-modal-link");
@@ -1135,9 +2289,14 @@ document.addEventListener("DOMContentLoaded", () => {
       gbImages = mod._aPreviewMedia._aImages.map(
         (img) => img._sBaseUrl + "/" + img._sFile,
       );
+      gbImages.forEach((url) => {
+        const p = new Image();
+        p.src = url;
+      });
     }
 
     const imgEl = document.getElementById("gb-modal-img");
+    const carouselContainer = document.getElementById("gb-carousel-container");
 
     imgEl.style.filter = "none";
 
@@ -1145,25 +2304,36 @@ document.addEventListener("DOMContentLoaded", () => {
       gbImgIndex = 0;
       imgEl.src = gbImages[0];
       imgEl.style.display = "block";
-
-      gbCarouselInterval = setInterval(() => {
-        gbImgIndex = (gbImgIndex + 1) % gbImages.length;
-        imgEl.src = gbImages[gbImgIndex];
-      }, 3500);
+      triggerSlideAnim();
+      startIdleTimer();
     } else {
       imgEl.style.display = "none";
     }
 
-    document.getElementById("gb-carousel-prev").onclick = () => {
-      gbImgIndex = (gbImgIndex - 1 + gbImages.length) % gbImages.length;
-      imgEl.src = gbImages[gbImgIndex];
-    };
-    document.getElementById("gb-carousel-next").onclick = () => {
-      gbImgIndex = (gbImgIndex + 1) % gbImages.length;
-      imgEl.src = gbImages[gbImgIndex];
+    imgEl.onclick = (e) => {
+      e.stopPropagation();
+      if (gbImages.length > 0 && gbImages[gbImgIndex]) {
+        openLightbox(gbImages[gbImgIndex]);
+      }
     };
 
-    modal.style.display = "flex";
+    if (carouselContainer) {
+      carouselContainer.onmousemove = resetIdleTimer;
+      carouselContainer.ontouchstart = resetIdleTimer;
+    }
+
+    document.getElementById("gb-carousel-prev").onclick = (e) => {
+      e.stopPropagation();
+      showModalImage(gbImgIndex - 1);
+      resetIdleTimer();
+    };
+    document.getElementById("gb-carousel-next").onclick = (e) => {
+      e.stopPropagation();
+      showModalImage(gbImgIndex + 1);
+      resetIdleTimer();
+    };
+
+    modal.classList.add("active");
 
     document.getElementById("gb-files-loading").style.display = "block";
     document.getElementById("gb-files-list").innerHTML = "";
@@ -1174,8 +2344,18 @@ document.addEventListener("DOMContentLoaded", () => {
       const dataRes = await fetch(dataUrl);
       const itemData = await dataRes.json();
 
-      document.getElementById("gb-modal-desc").innerHTML =
-        itemData[0] || t('gb_desc_empty');
+      const descEl = document.getElementById("gb-modal-desc");
+      if (descEl) {
+        descEl.innerHTML = itemData[0] || t('gb_desc_empty');
+        descEl.querySelectorAll("img").forEach((dImg) => {
+          dImg.style.cursor = "pointer";
+          dImg.title = "Нажмите для увеличения";
+          dImg.onclick = (e) => {
+            e.stopPropagation();
+            if (dImg.src) openLightbox(dImg.src);
+          };
+        });
+      }
       const filesObj = itemData[1];
       document.getElementById("gb-files-loading").style.display = "none";
 
@@ -1209,8 +2389,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     `;
           fDiv.querySelector(".btn-install").onclick = () => {
             if (!isFileDownloading) {
-              startDownload(file, mod._sName, mod._idRow, previewUrlToPass);
-              modal.style.display = "none";
+              const modDescriptionToPass =
+                itemData && itemData[0] ? itemData[0] : (mod._sDescription || "");
+              startDownload(
+                file,
+                mod._sName,
+                mod._idRow,
+                previewUrlToPass,
+                modDescriptionToPass,
+                mod,
+              );
+              modal.classList.remove("active");
             }
           };
           document.getElementById("gb-files-list").appendChild(fDiv);
@@ -1228,35 +2417,44 @@ document.addEventListener("DOMContentLoaded", () => {
     closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
 
     newCloseBtn.onclick = () => {
-      modal.style.display = "none";
-      clearInterval(gbCarouselInterval);
+      modal.classList.remove("active");
+      clearTimeout(gbIdleTimer);
     };
     modal.onclick = (e) => {
       if (e.target === modal) {
-        modal.style.display = "none";
-        clearInterval(gbCarouselInterval);
+        modal.classList.remove("active");
+        clearTimeout(gbIdleTimer);
       }
     };
   };
 
-  const startDownload = (gbFile, modName, modId, previewUrl) => {
+  const startDownload = (gbFile, modName, modId, previewUrl, modDescription, gbMod = null) => {
     const url = gbFile._sDownloadUrl;
     const fileName = gbFile._sFile;
     const downloadId = gbFile._idRow.toString();
 
     const xxmiPath = currentSettings.xxmiPath;
     if (!xxmiPath) {
-      alert(t('dl_need_path'));
+      if (window.Toast) window.Toast.warning(t('dl_need_path'));
+      else alert(t('dl_need_path'));
       return;
     }
 
     const tempPath = path.join(xxmiPath, fileName);
     const safeModFolder =
       modName.replace(/[<>:"/\\|?*]+/g, "").trim() || "Mod_" + modId;
+    const safeVariationName =
+      fileName.replace(/\.[^/.]+$/, "").replace(/[<>:"/\\|?*]+/g, "").trim() ||
+      "Default";
+
+    const modvarsModFolder = path.join(xxmiPath, "modvars", safeModFolder);
+    const variationFolder = path.join(modvarsModFolder, safeVariationName);
     const targetModFolder = path.join(xxmiPath, "Mods", safeModFolder);
+    const dismodFolder = path.join(xxmiPath, "dismods", safeModFolder);
 
     if (activeDownloads[downloadId]) {
-      alert(t('dl_in_queue'));
+      if (window.Toast) window.Toast.warning(t('dl_in_queue'));
+      else alert(t('dl_in_queue'));
       return;
     }
 
@@ -1358,14 +2556,36 @@ document.addEventListener("DOMContentLoaded", () => {
         activeDownloads[downloadId].status = t('dl_unpacking');
         setTimeout(async () => {
           try {
-            if (tempPath.toLowerCase().endsWith(".zip") && AdmZip) {
-              const zip = new AdmZip(tempPath);
-              zip.extractAllTo(targetModFolder, true);
-              fs.unlinkSync(tempPath);
-            } else {
-              if (!fs.existsSync(targetModFolder))
-                fs.mkdirSync(targetModFolder, { recursive: true });
-              fs.renameSync(tempPath, path.join(targetModFolder, fileName));
+            if (!fs.existsSync(variationFolder)) {
+              fs.mkdirSync(variationFolder, { recursive: true });
+            }
+
+
+            await ArchiveExtractor.extractArchive(tempPath, variationFolder);
+            await ArchiveExtractor.extractRecursively(variationFolder);
+
+            if (fs.existsSync(tempPath)) {
+              try {
+                fs.unlinkSync(tempPath);
+              } catch (e) { }
+            }
+
+            modManager.flattenDirectory(variationFolder);
+
+            if (previewUrl) {
+              const previewDest = path.join(variationFolder, "preview.jpg");
+              await downloadImage(previewUrl, previewDest);
+            }
+
+            if (modDescription) {
+              const cleanDesc = htmlToPlainText(modDescription);
+              if (cleanDesc) {
+                fs.writeFileSync(
+                  path.join(variationFolder, "description.txt"),
+                  cleanDesc,
+                  "utf-8",
+                );
+              }
             }
 
             modManager.addDownloadLink(
@@ -1373,14 +2593,103 @@ document.addEventListener("DOMContentLoaded", () => {
               `https://gamebanana.com/mods/${modId}`,
             );
 
-            if (previewUrl) {
-              const previewDest = path.join(targetModFolder, "preview.jpg");
-              await downloadImage(previewUrl, previewDest);
+
+            let charName = null;
+            let charId = null;
+            let rootCat = "Character Skins";
+
+            if (gbMod) {
+              if (gbMod._aSubCategory && gbMod._aSubCategory._sName) {
+                charName = gbMod._aSubCategory._sName;
+                if (gbMod._aSubCategory._idRow) {
+                  charId = parseInt(gbMod._aSubCategory._idRow);
+                }
+              } else if (gbMod._aCategory && gbMod._aCategory._sName) {
+                charName = gbMod._aCategory._sName;
+                if (gbMod._aCategory._idRow) {
+                  charId = parseInt(gbMod._aCategory._idRow);
+                }
+              }
+              if (gbMod._aRootCategory && gbMod._aRootCategory._sName) {
+                rootCat = gbMod._aRootCategory._sName;
+              }
+            }
+
+            if (!charName) {
+              const detected = modManager.detectCharacter(
+                modName,
+                [variationFolder, modvarsModFolder],
+                currentSettings.language || "ru",
+              );
+              charName = detected.character;
+              charId = detected.characterId;
+              rootCat = detected.category;
+            }
+
+            modManager.setModMetadata(
+              safeModFolder,
+              {
+                id: modId,
+                name: modName,
+                character: charName,
+                characterId: charId,
+                category: rootCat,
+                sourceUrl: `https://gamebanana.com/mods/${modId}`,
+              },
+              [variationFolder, modvarsModFolder, targetModFolder, dismodFolder],
+            );
+
+            const isInstalledActive = fs.existsSync(targetModFolder);
+            const isInstalledDismod = fs.existsSync(dismodFolder);
+
+            if (!isInstalledActive && !isInstalledDismod) {
+              fs.mkdirSync(targetModFolder, { recursive: true });
+              fs.cpSync(variationFolder, targetModFolder, {
+                recursive: true,
+                force: true,
+              });
+              modManager.flattenDirectory(targetModFolder);
+              try {
+                fs.writeFileSync(
+                  path.join(modvarsModFolder, ".active_var"),
+                  safeVariationName,
+                  "utf-8",
+                );
+              } catch (e) { }
+            } else {
+              const existingVars = fs.existsSync(modvarsModFolder)
+                ? fs
+                  .readdirSync(modvarsModFolder, { withFileTypes: true })
+                  .filter((e) => e.isDirectory())
+                  .map((e) => e.name)
+                : [];
+
+              if (existingVars.length <= 1) {
+                const currentFolder = isInstalledActive
+                  ? targetModFolder
+                  : dismodFolder;
+                const origFolder = path.join(modvarsModFolder, "Original");
+                if (!fs.existsSync(origFolder) && currentFolder !== origFolder) {
+                  try {
+                    fs.mkdirSync(origFolder, { recursive: true });
+                    fs.cpSync(currentFolder, origFolder, {
+                      recursive: true,
+                      force: true,
+                    });
+                    fs.writeFileSync(
+                      path.join(modvarsModFolder, ".active_var"),
+                      "Original",
+                      "utf-8",
+                    );
+                  } catch (e) { }
+                }
+              }
             }
 
             delete activeDownloads[downloadId];
             renderDownloadsTab();
           } catch (e) {
+            console.error("Error unpacking mod:", e);
             activeDownloads[downloadId].status = t('dl_unpack_err');
           }
         }, 500);
@@ -1507,7 +2816,9 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   setInterval(() => {
-    if (document.getElementById("downloads-list")) renderDownloadsTab();
+    if (Object.keys(activeDownloads).length > 0 && document.getElementById("downloads-list")) {
+      renderDownloadsTab();
+    }
   }, 200);
 
   const initSettings = () => {
@@ -1539,11 +2850,27 @@ document.addEventListener("DOMContentLoaded", () => {
       themes.forEach((theme) => {
         const opt = document.createElement("option");
         opt.value = theme;
-        opt.textContent = theme.charAt(0).toUpperCase() + theme.slice(1);
-        opt.style.background = "var(--bg-main)";
+        const transKey = `theme_${theme}`;
+        opt.textContent =
+          t(transKey) !== transKey
+            ? t(transKey)
+            : theme.charAt(0).toUpperCase() + theme.slice(1);
         themeSelect.appendChild(opt);
       });
-      themeSelect.value = currentSettings.theme || "base";
+      themeSelect.value = mapLegacyTheme(currentSettings.theme || "purple");
+    }
+
+    if (typeof CustomDropdown !== "undefined") {
+      const content = document.getElementById("content-container");
+      if (content) CustomDropdown.initAll(content);
+    }
+
+    const skipSplashCheckbox = document.getElementById("setting-skip-splash");
+    if (skipSplashCheckbox) {
+      skipSplashCheckbox.checked = !!currentSettings.skipSplashScreen;
+      skipSplashCheckbox.addEventListener("change", () => {
+        saveSettings();
+      });
     }
 
     const saveSettings = () => {
@@ -1556,7 +2883,8 @@ document.addEventListener("DOMContentLoaded", () => {
           : currentSettings.xxmiBinPath || "",
         nsfwMode: nsfwModeSelect ? nsfwModeSelect.value : "show",
         language: langSelect ? langSelect.value : (currentSettings.language || "en"),
-        theme: themeSelect ? themeSelect.value : (currentSettings.theme || "base"),
+        theme: themeSelect ? mapLegacyTheme(themeSelect.value) : (currentSettings.theme || "purple"),
+        skipSplashScreen: skipSplashCheckbox ? skipSplashCheckbox.checked : !!currentSettings.skipSplashScreen,
       };
       fs.writeFileSync(
         settingsFilePath,
@@ -1565,7 +2893,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     if (themeSelect) {
-      themeSelect.addEventListener("change", (e) => {
+      themeSelect.addEventListener("change", () => {
         saveSettings();
         applyTheme(currentSettings.theme);
       });
@@ -1574,7 +2902,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (nsfwModeSelect) nsfwModeSelect.addEventListener("change", saveSettings);
 
     if (langSelect) {
-      langSelect.addEventListener("change", (e) => {
+      langSelect.addEventListener("change", () => {
         saveSettings();
         loadTranslations(currentSettings.language);
         applyTranslationsToDOM(document.body);
@@ -1634,6 +2962,14 @@ document.addEventListener("DOMContentLoaded", () => {
         input.click();
       });
     }
+
+    const githubLink = document.getElementById("settings-github-link");
+    if (githubLink) {
+      githubLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        shell.openExternal("https://github.com/whityx/WZMM/");
+      });
+    }
   };
 
   menuItems.forEach((item) => {
@@ -1651,10 +2987,17 @@ document.addEventListener("DOMContentLoaded", () => {
     startOpt.launch(currentSettings, t);
   });
 
+
+
+  if (!currentSettings.skipSplashScreen && typeof SplashManager !== "undefined") {
+    SplashManager.setProgress(60, t("splash_status_mods"));
+  }
+
   loadPage("installed").then(() => {
-    const activeItem = document.querySelector(".sidebar-item.active");
-    if (activeItem) {
-      setTimeout(() => moveIndicator(activeItem), 50);
+    updateActiveSidebarIndicator();
+    if (typeof SplashManager !== "undefined") {
+      SplashManager.setProgress(100, t("splash_status_ready"));
+      SplashManager.finish(400);
     }
   });
 });

@@ -143,3 +143,5 @@ vite.config.ts.timestamp-*
 .vite/
 
 dowlinks.json
+scripts/
+API_NOTES.md

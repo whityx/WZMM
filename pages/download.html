@@ -1,4 +1,5 @@
 <link rel="stylesheet" href="css/download.css">
+<link rel="stylesheet" href="css/sidemenufilter.css">
 
 <div class="installed-page-container">
     <div class="page-header">
@@ -23,22 +24,33 @@
                         <option value="views" data-i18n-text="gb_sort_views">По просмотрам</option>
                         <option value="likes" data-i18n-text="gb_sort_likes">По лайкам</option>
                     </select>
-                    <span class="select-arrow">▼</span>
                 </div>
             </div>
+
+            <button id="gb-filter-btn" class="gb-filter-btn" title="Фильтры">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                </svg>
+                <span data-i18n-text="gb_btn_filters">Фильтры</span>
+                <span id="gb-filter-badge" class="gb-filter-btn-badge" style="display:none;"></span>
+            </button>
             
             <button id="gb-refresh-btn" class="btn-refresh">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
                 <span data-i18n-text="gb_btn_refresh">Обновить</span>
             </button>
         </div>
+        <div id="gb-active-filter-bar" class="gb-active-filter-bar"></div>
     </div>
     
-    <div id="gb-loading" style="display: none; color: var(--text-muted); text-align: center; margin-top: 10px; font-weight: 500;" data-i18n-text="gb_loading">
-        Подключение к базе данных...
+    <div id="gb-loading" class="gb-loading-state" style="display: none;">
+        <div class="gb-spinner"></div>
+        <span class="gb-loading-text" data-i18n-text="gb_loading">Подключение к базе данных...</span>
     </div>
 
     <div id="gb-grid" class="mods-grid"></div>
+
+    <div id="gb-drawer-container"></div>
 
     <div id="gb-modal" class="modal-overlay">
         <div class="modal-content gb-modal-content">
@@ -49,10 +61,10 @@
             
             <div class="gb-modal-layout">
                 <div class="gb-modal-left">
-                    <div class="carousel-container">
+                    <div class="carousel-container" id="gb-carousel-container">
                         <button class="carousel-btn prev-btn" id="gb-carousel-prev">&lt;</button>
                         <div class="carousel-image-wrapper">
-                            <img id="gb-modal-img" src="" alt="" style="display: none;">
+                            <img id="gb-modal-img" src="" alt="" style="display: none;" title="Нажмите для открытия в полный размер">
                         </div>
                         <button class="carousel-btn next-btn" id="gb-carousel-next">&gt;</button>
                     </div>

@@ -1,0 +1,183 @@
+.sidebar {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 6px 6px 6px 16px;
+  z-index: 9999;
+  height: 56px;
+  overflow: hidden;
+  box-sizing: border-box;
+  transition:
+    min-width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar .sidebar-top,
+.sidebar .sidebar-bottom {
+  transition:
+    opacity 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.32s ease;
+  will-change: opacity, transform, filter;
+}
+
+.sidebar .sidebar-active-indicator {
+  transition:
+    left 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+    top 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+    width 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+    height 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.32s ease,
+    background-color 0.4s ease;
+  will-change: left, top, width, height, opacity, transform;
+}
+
+.sidebar.island-notification-active {
+  min-width: 500px;
+}
+
+.sidebar.island-notification-active .sidebar-top,
+.sidebar.island-notification-active .sidebar-bottom,
+.sidebar.island-notification-active .sidebar-active-indicator {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.93);
+  filter: blur(4px);
+}
+
+.sidebar-island-notification {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 0 16px;
+  gap: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.93);
+  filter: blur(4px);
+  transition:
+    opacity 0.32s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.32s ease;
+  box-sizing: border-box;
+  z-index: 10;
+  will-change: opacity, transform, filter;
+}
+
+.sidebar.island-notification-active .sidebar-island-notification {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  filter: blur(0);
+}
+
+.island-toast-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim, rgba(86, 71, 135, 0.2));
+  color: var(--accent-hover, #6a58a6);
+  border: 1px solid var(--accent-dim, rgba(86, 71, 135, 0.35));
+  box-shadow: 0 0 14px var(--accent-dim);
+  transition: all var(--transition-fast);
+}
+
+.island-toast-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.island-toast-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.island-toast-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.island-toast-divider {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted, #71717a);
+  flex-shrink: 0;
+}
+
+.island-toast-message {
+  font-size: 0.84rem;
+  color: var(--text-secondary, #a1a1aa);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.island-toast-close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #71717a);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: var(--transition-fast);
+}
+
+.island-toast-close:hover {
+  color: var(--text-primary, #ffffff);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.08));
+  opacity: 1;
+}
+
+.island-toast-close svg {
+  width: 15px;
+  height: 15px;
+}
+
+.island-toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent, #564787);
+  width: 100%;
+  transform-origin: left;
+  opacity: 0.85;
+  border-radius: 0 0 var(--radius-pill) var(--radius-pill);
+}

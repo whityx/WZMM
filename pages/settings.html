@@ -25,26 +25,49 @@
 <div class="toggle-row">
     <div class="toggle-label" data-i18n-text="settings_theme">Тема оформления</div>
     <div class="select-wrapper">
-        <select id="setting-theme" class="mods-filter-select" style="background: transparent; border: 1px solid var(--border-subtle); outline: none; color: var(--text-primary); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 0.85rem;">
+        <select id="setting-theme" class="mods-filter-select">
         </select>
     </div>
 </div>
 <div class="toggle-row">
     <div class="toggle-label" data-i18n-text="settings_lang">Язык | Language</div>
     <div class="select-wrapper">
-        <select id="language-selector" class="mods-filter-select" style="background: transparent; border: 1px solid var(--border-subtle); outline: none; color: var(--text-primary); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 0.85rem;">
-            <option style="background:var(--bg-main);" value="ru">Русский</option>
-            <option style="background:var(--bg-main);" value="en">English</option>
+        <select id="language-selector" class="mods-filter-select">
+            <option value="ru">Русский</option>
+            <option value="en">English</option>
         </select>
     </div>
 </div>
 <div class="toggle-row">
     <div class="toggle-label" data-i18n-text="settings_nsfw">Фильтр контента (18+)</div>
     <div class="select-wrapper">
-        <select id="setting-nsfw-mode" class="mods-filter-select" style="background: transparent; border: 1px solid var(--border-subtle); outline: none; color: var(--text-primary); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-size: 0.85rem;">
-            <option style="background:var(--bg-main);" value="show" data-i18n-text="settings_nsfw_show">Показывать всё</option>
-            <option style="background:var(--bg-main);" value="blur" data-i18n-text="settings_nsfw_blur">Размытие (Blur)</option>
-            <option style="background:var(--bg-main);" value="hide" data-i18n-text="settings_nsfw_hide">Скрывать полностью</option>
+        <select id="setting-nsfw-mode" class="mods-filter-select">
+            <option value="show" data-i18n-text="settings_nsfw_show">Показывать всё</option>
+            <option value="blur" data-i18n-text="settings_nsfw_blur">Размывать везде</option>
+            <option value="blur_local_only" data-i18n-text="settings_nsfw_blur_local_only">Размывать только локальные моды</option>
+            <option value="blur_download_only" data-i18n-text="settings_nsfw_blur_download_only">Размывать только из вкладки скачать</option>
+            <option value="hide" data-i18n-text="settings_nsfw_hide">Скрывать полностью</option>
         </select>
     </div>
+</div>
+<div class="toggle-row">
+    <div class="toggle-label" data-i18n-text="settings_skip_splash">Пропускать экран загрузки при запуске</div>
+    <label class="toggle-switch">
+        <input type="checkbox" id="setting-skip-splash">
+        <span class="toggle-slider"></span>
+    </label>
+</div>
+
+<div class="divider"></div>
+
+<div class="settings-footer">
+    <div class="settings-author-info">
+        <span class="settings-author-text"><span data-i18n-text="settings_author_label">Автор</span>: <strong class="settings-author-name">whityx</strong></span>
+    </div>
+    <a href="https://github.com/whityx/WZMM/" target="_blank" class="settings-github-link" id="settings-github-link" title="https://github.com/whityx/WZMM/">
+        <svg class="settings-github-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+        </svg>
+        <span data-i18n-text="settings_project_link">Исходный код (GitHub)</span>
+    </a>
 </div>

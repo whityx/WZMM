@@ -4,42 +4,12 @@ const fs = require("fs");
 const os = require("os");
 const { spawn, execSync } = require("child_process");
 
-function showBanner(title, message) {
-  let banner = document.getElementById("wzmm-launch-banner");
-  if (!banner) {
-    banner = document.createElement("div");
-    banner.id = "wzmm-launch-banner";
-    banner.style.cssText = `
-            position: fixed; bottom: 30px; right: 30px; width: 340px;
-            background: var(--bg-glass, rgba(18,18,24,0.9));
-            backdrop-filter: blur(15px);
-            border: 1px solid var(--accent, #564787);
-            border-radius: 12px; padding: 16px 20px;
-            color: #fff; z-index: 10000;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
-            transform: translateY(150%); opacity: 0;
-            transition: 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
-            display: flex; flex-direction: column; gap: 6px;
-        `;
-    document.body.appendChild(banner);
+function notify(title, message, type = "info") {
+  if (typeof window !== "undefined" && window.Toast) {
+    window.Toast.show({ title, message, type });
+  } else {
+    console.log(`[${type.toUpperCase()}] ${title}: ${message}`);
   }
-
-  banner.innerHTML = `
-        <h4 style="margin:0; font-size:1rem; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="color:var(--accent);"><path d="M12 2L2 22h20L12 2zm0 4.5l6.5 13.5h-13L12 6.5zM11 16h2v2h-2v-2zm0-7h2v5h-2V9z"/></svg>
-            ${title}
-        </h4>
-        <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.4;">${message}</div>
-    `;
-
-  void banner.offsetWidth;
-  banner.style.transform = "translateY(0)";
-  banner.style.opacity = "1";
-
-  setTimeout(() => {
-    banner.style.transform = "translateY(150%)";
-    banner.style.opacity = "0";
-  }, 5000);
 }
 
 function getSteamPaths() {
@@ -120,20 +90,20 @@ module.exports = {
   launch: (settings, t) => {
     const binPath = settings.xxmiBinPath;
     if (!binPath) {
-      showBanner(t('start_err_title'), t('start_err_bin'));
+      notify(t("start_err_title"), t("start_err_bin"), "error");
       return;
     }
 
     const steamInfo = findSteamAndGame();
     if (!steamInfo || !steamInfo.gameExe) {
-      showBanner(t('start_err_title'), t('start_err_steam'));
+      notify(t("start_err_title"), t("start_err_steam"), "error");
       return;
     }
     const { steamDir, gameLib, gameExe, libs } = steamInfo;
 
     const protonBin = findProton(libs);
     if (!protonBin) {
-      showBanner(t('start_err_title'), t('start_err_proton'));
+      notify(t("start_err_title"), t("start_err_proton"), "error");
       return;
     }
 
@@ -154,7 +124,7 @@ module.exports = {
     }
 
     if (!xxmiExe) {
-      showBanner(t('start_err_title'), t('start_err_exe'));
+      notify(t("start_err_title"), t("start_err_exe"), "error");
       return;
     }
 
@@ -165,7 +135,7 @@ module.exports = {
       fs.mkdirSync(compatData, { recursive: true });
     }
 
-    showBanner(t('start_prep_title'), t('start_prep_msg'));
+    notify(t("start_prep_title"), t("start_prep_msg"), "info");
 
     const env = Object.assign({}, process.env, {
       STEAM_COMPAT_DATA_PATH: compatData,
@@ -212,7 +182,7 @@ module.exports = {
       });
       child.unref();
 
-      showBanner(t('start_launch_title'), t('start_launch_msg'));
+      notify(t("start_launch_title"), t("start_launch_msg"), "info");
 
       let attempts = 0;
       const maxAttempts = 15;
@@ -223,7 +193,7 @@ module.exports = {
           execSync('pgrep -f "ZenlessZoneZero"');
 
           clearInterval(checkInterval);
-          showBanner(t('start_success_title'), t('start_success_msg'));
+          notify(t("start_success_title"), t("start_success_msg"), "success");
 
           if (settings.minimizeTray) {
             ipcRenderer.send("minimize-to-tray");
@@ -231,12 +201,16 @@ module.exports = {
         } catch (e) {
           if (attempts >= maxAttempts) {
             clearInterval(checkInterval);
-            showBanner(t('start_wait_title'), t('start_wait_msg'));
+            notify(t("start_wait_title"), t("start_wait_msg"), "warning");
           }
         }
       }, 2000);
     } catch (err) {
-      showBanner(t('start_sys_err_title'), t('start_sys_err_msg', { error: err.message }));
+      notify(
+        t("start_sys_err_title"),
+        t("start_sys_err_msg", { error: err.message }),
+        "error",
+      );
     }
   },
 };

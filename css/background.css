@@ -1,0 +1,46 @@
+#background-container {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+  background-color: var(--bg-main, #09090b);
+  transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.particles-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  background-color: var(--accent-hover, #6a58a6);
+  border-radius: 50%;
+  opacity: 0;
+  animation: particleFloat 15s linear infinite;
+  transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes particleFloat {
+  0% {
+    transform: translateY(100vh) scale(0);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 0.8;
+    transform: translateY(80vh) scale(1);
+  }
+
+  80% {
+    opacity: 0.6;
+    transform: translateY(20vh) scale(1);
+  }
+
+  100% {
+    transform: translateY(-10vh) scale(0);
+    opacity: 0;
+  }
+}

@@ -1,5 +1,6 @@
 <link rel="stylesheet" href="css/installed.css">
 <link rel="stylesheet" href="css/groupmenu.css">
+<link rel="stylesheet" href="css/sidemenufilter.css">
 
 <div class="installed-page-container">
     <div class="page-header">
@@ -21,9 +22,16 @@
                         <option value="active" data-i18n-text="installed_filter_active">Только включенные</option>
                         <option value="inactive" data-i18n-text="installed_filter_inactive">Только выключенные</option>
                     </select>
-                    <span class="select-arrow">▼</span>
                 </div>
             </div>
+
+            <button id="installed-filter-btn" class="gb-filter-btn installed-filter-btn" title="Фильтры">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                </svg>
+                <span data-i18n-text="installed_filter_btn">Фильтры</span>
+                <span id="installed-filter-badge" class="gb-filter-btn-badge installed-filter-btn-badge" style="display:none;"></span>
+            </button>
 
             <button id="btn-group-manage" class="btn-group-manage">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -34,6 +42,7 @@
                 <span data-i18n-text="installed_groups_btn">Управление группами</span>
             </button>
         </div>
+        <div id="installed-active-filter-bar" class="gb-active-filter-bar"></div>
     </div>
     
     <div id="mods-empty-state" style="display: none; margin-top: 30px; text-align: center; color: var(--text-muted); font-size: 1rem;" data-i18n-text="installed_empty">
@@ -41,6 +50,8 @@
     </div>
 
     <div id="mods-grid" class="mods-grid"></div>
+
+    <div id="installed-drawer-container"></div>
 
     <div id="group-side-drawer" class="group-side-drawer">
         <div class="group-drawer-header">
@@ -83,17 +94,101 @@
     <div id="group-toast" class="group-toast"></div>
 
     <div id="mod-modal" class="modal-overlay">
-        <div class="modal-content">
+        <div class="modal-content installed-modal-content">
             <span class="modal-close" id="modal-close" title="Закрыть">&times;</span>
             
-            <h3 id="modal-title" class="modal-title">Название мода</h3>
-            <div id="modal-status" class="modal-status"></div>
+            <div class="installed-modal-header">
+                <div class="installed-modal-title-row">
+                    <h3 id="modal-title" class="modal-title">Название мода</h3>
+                    <div id="modal-status" class="modal-status"></div>
+                </div>
+                <div id="modal-char-row" class="modal-char-row" style="display: none;">
+                    <div class="modal-char-header">
+                        <span id="modal-char-badge" class="mod-char-badge"></span>
+                        <button id="modal-edit-char-btn" class="btn-edit-char" title="Изменить персонажа / категорию">
+                            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 20h9"></path>
+                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                            </svg>
+                            <span data-i18n-text="modal_edit_character">Изменить</span>
+                        </button>
+                        <label class="modal-nsfw-toggle-wrap" title="18+ (NSFW)">
+                            <span class="modal-nsfw-toggle-label" data-i18n-text="modal_nsfw_toggle">18+ (NSFW)</span>
+                            <span class="toggle-switch toggle-switch-sm">
+                                <input type="checkbox" id="modal-nsfw-checkbox">
+                                <span class="toggle-slider"></span>
+                            </span>
+                        </label>
+                    </div>
+                    <div id="modal-char-picker" class="modal-char-picker" style="display: none;">
+                        <div class="modal-char-picker-search-wrap">
+                            <input type="text" id="modal-char-picker-search" class="modal-char-picker-search" placeholder="Поиск персонажа или категории..." data-i18n-placeholder="installed_filter_search_char">
+                        </div>
+                        <div id="modal-char-picker-list" class="modal-char-picker-list"></div>
+                    </div>
+                </div>
 
-            <a id="modal-source-link" class="modal-link" href="#" style="display: none; margin-bottom: 20px;" data-i18n-text="modal_source">Открыть источник</a>
+                <a id="modal-source-link" class="modal-link" href="#" style="display: none;" data-i18n-text="modal_source">Открыть источник</a>
+            </div>
+
+            <div class="installed-modal-layout">
+                <div class="installed-modal-left">
+                    <div id="modal-image-container" class="modal-image-container"></div>
+                    <div id="modal-description" class="modal-text"></div>
+                </div>
+
+                <div class="installed-modal-right">
+                    <div id="modal-variations-box" class="modal-sidebar-card" style="display: none;">
+                        <div class="modal-sidebar-card-header">
+                            <div class="modal-sidebar-card-title">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                                <span data-i18n-text="mod_variations_title">Вариации мода</span>
+                            </div>
+                            <span id="modal-variations-count" class="modal-variations-badge">0</span>
+                        </div>
+                        <div id="modal-variations-list" class="modal-variations-list"></div>
+                    </div>
+
+                    <div id="modal-keybinds-box" class="modal-sidebar-card">
+                        <div class="modal-sidebar-card-header">
+                            <div class="modal-sidebar-card-title">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="4" width="20" height="16" rx="3"></rect>
+                                    <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M18 12h.01M8 16h8"></path>
+                                </svg>
+                                <span data-i18n-text="mod_keybinds_title">Управление и бинды</span>
+                            </div>
+                            <span id="modal-keybinds-count" class="modal-variations-badge" style="display: none;">0</span>
+                        </div>
+                        <div id="modal-keybinds-list" class="modal-keybinds-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="var-delete-modal" class="modal-overlay">
+        <div class="modal-content var-delete-box">
+            <span class="modal-close" id="var-delete-close" title="Закрыть">&times;</span>
+            <div class="confirm-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"></path>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+            </div>
+            <h3 id="var-delete-title" class="modal-title" data-i18n-text="mod_delete_var_title">Удаление версий мода</h3>
+            <p id="var-delete-desc" class="modal-text" data-i18n-text="mod_delete_var_desc">У этого мода есть несколько версий. Выберите, какие версии удалить:</p>
             
-            <div class="modal-scroll-area">
-                <div id="modal-image-container" class="modal-image-container"></div>
-                <div id="modal-description" class="modal-text"></div>
+            <div class="var-delete-scroll-area">
+                <div id="var-delete-list" class="var-delete-list"></div>
+            </div>
+
+            <div class="var-delete-actions">
+                <button id="var-delete-cancel" class="btn-secondary" data-i18n-text="groups_cancel_btn">Отмена</button>
+                <button id="var-delete-selected" class="btn-danger" data-i18n-text="mod_delete_selected_vars">Удалить выбранные</button>
+                <button id="var-delete-all" class="btn-danger-outline" data-i18n-text="mod_delete_all_vars">Удалить весь мод</button>
             </div>
         </div>
     </div>
