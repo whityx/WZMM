@@ -2,6 +2,9 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electr
 const path = require('path');
 const fs = require('fs');
 
+app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
+
 app.setDesktopName('why-zenless-mod-manager');
 
 let mainWindow = null;
@@ -39,7 +42,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    app.quit();
 });
 
 ipcMain.on('minimize-to-tray', () => {
