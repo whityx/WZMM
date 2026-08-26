@@ -175,11 +175,15 @@ module.exports = {
     fs.writeFileSync(appidTxt, APP_ID);
 
     try {
-      const child = spawn(protonBin, ["run", xxmiExe], {
-        env: env,
-        detached: true,
-        stdio: "ignore",
-      });
+      const child = spawn(
+        protonBin,
+        ["run", xxmiExe, "--nogui", "--xxmi", "ZZMI"],
+        {
+          env: env,
+          detached: true,
+          stdio: "ignore",
+        },
+      );
       child.unref();
 
       notify(t("start_launch_title"), t("start_launch_msg"), "info");
