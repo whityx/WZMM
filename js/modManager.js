@@ -120,7 +120,7 @@ function flattenDirectory(dirPath) {
 
 class ModManager {
   constructor() {
-    this.configDir = path.join(os.homedir(), ".config", "wzmm");
+    this.configDir = require("./platform").getConfigDir();
     if (!fs.existsSync(this.configDir)) {
       fs.mkdirSync(this.configDir, { recursive: true });
     }

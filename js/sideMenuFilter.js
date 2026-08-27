@@ -17,7 +17,7 @@ class SideMenuDownload {
     this.nsfwMode = options.nsfwMode || "hide";
     this.isOpen = false;
 
-    this.configDir = path.join(os.homedir(), ".config", "wzmm");
+    this.configDir = require("./platform").getConfigDir();
     this.cacheDir = path.join(this.configDir, "cache");
     this.iconsDir = path.join(this.cacheDir, "icons");
     this.subcatsCacheFile = path.join(this.cacheDir, "subcategories.json");
@@ -130,15 +130,21 @@ class SideMenuDownload {
     return url;
   }
 
-  downloadIconAsync(url, destPath) {
-    if (!url.startsWith("http")) return;
+  downloadIconAsync(url, destPath, retries = 3) {
+    if (!url || !url.startsWith("http")) return;
     try {
       https.get(url, { headers: { "User-Agent": "WZMM-Client/1.0" } }, (res) => {
         if (res.statusCode === 200) {
           const fileStream = fs.createWriteStream(destPath);
           res.pipe(fileStream);
+        } else if (retries > 0) {
+          setTimeout(() => this.downloadIconAsync(url, destPath, retries - 1), 3000);
         }
-      }).on("error", () => { });
+      }).on("error", () => {
+        if (retries > 0) {
+          setTimeout(() => this.downloadIconAsync(url, destPath, retries - 1), 3000);
+        }
+      });
     } catch (e) { }
   }
 
@@ -147,30 +153,34 @@ class SideMenuDownload {
     this.fetchRootCategories();
   }
 
-  async fetchRootCategories() {
-    try {
-      const res = await new Promise((resolve) => {
-        https.get("https://gamebanana.com/apiv11/Game/19567/ProfilePage", { headers: { "User-Agent": "WZMM-Client/1.0" } }, (response) => {
-          let data = "";
-          response.on("data", c => data += c);
-          response.on("end", () => {
-            try { resolve(JSON.parse(data)); } catch (e) { resolve(null); }
-          });
-        }).on("error", () => resolve(null));
-      });
+  async fetchRootCategories(retries = 3) {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const res = await new Promise((resolve) => {
+          https.get("https://gamebanana.com/apiv11/Game/19567/ProfilePage", { headers: { "User-Agent": "WZMM-Client/1.0" } }, (response) => {
+            let data = "";
+            response.on("data", c => data += c);
+            response.on("end", () => {
+              try { resolve(JSON.parse(data)); } catch (e) { resolve(null); }
+            });
+          }).on("error", () => resolve(null));
+        });
 
-      if (res && res._aModRootCategories && Array.isArray(res._aModRootCategories)) {
-        this.rootCategories = res._aModRootCategories.map(cat => ({
-          id: cat._idRow,
-          name: cat._sName,
-          modCount: cat._nItemCount,
-          subcatCount: cat._nCategoryCount,
-          iconUrl: cat._sIconUrl
-        }));
-        this.saveSubcategoriesCache();
-        this.updateSubcategoriesListUI();
-      }
-    } catch (e) { }
+        if (res && res._aModRootCategories && Array.isArray(res._aModRootCategories)) {
+          this.rootCategories = res._aModRootCategories.map(cat => ({
+            id: cat._idRow,
+            name: cat._sName,
+            modCount: cat._nItemCount,
+            subcatCount: cat._nCategoryCount,
+            iconUrl: cat._sIconUrl
+          }));
+          this.saveSubcategoriesCache();
+          this.updateSubcategoriesListUI();
+          break;
+        }
+      } catch (e) { }
+      await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+    }
   }
 
   discoverNewSubcategories(modRecords) {

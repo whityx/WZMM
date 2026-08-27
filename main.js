@@ -2,10 +2,17 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electr
 const path = require('path');
 const fs = require('fs');
 
-app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
-app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
+const { isLinux } = require('./js/platform');
 
-app.setDesktopName('why-zenless-mod-manager');
+if (isLinux) {
+    app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+    app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
+    if (app.setDesktopName) {
+        app.setDesktopName('why-zenless-mod-manager');
+    }
+} else {
+    app.setAppUserModelId('com.whityx.wzmm');
+}
 
 let mainWindow = null;
 let tray = null;
@@ -24,6 +31,20 @@ function createWindow() {
     });
 
     mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+        if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+            require('electron').shell.openExternal(url);
+        }
+        return { action: 'deny' };
+    });
+
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+        if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+            event.preventDefault();
+            require('electron').shell.openExternal(url);
+        }
+    });
 
     mainWindow.on('close', (event) => {
         if (!isQuiting && tray) {
@@ -51,7 +72,7 @@ ipcMain.on('minimize-to-tray', () => {
     }
 
     if (!tray) {
-        let iconPath = path.join(__dirname, 'icon.png');
+        let iconPath = path.join(__dirname, 'build', 'icons', '512x512.png');
         let icon;
         
         if (fs.existsSync(iconPath)) {

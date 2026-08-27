@@ -4,8 +4,6 @@
   width: 100vw;
   height: 100vh;
   background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   z-index: 10000;
   opacity: 0;
   visibility: hidden;
@@ -66,9 +64,7 @@
   justify-content: space-between;
   padding: 18px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(19, 23, 31, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: #13171f;
   flex-shrink: 0;
 }
 

@@ -503,7 +503,7 @@
   text-overflow: ellipsis;
   cursor: pointer;
   user-select: none;
-  transition: background var(--transition-fast, 0.15s ease), border-color var(--transition-fast, 0.15s ease), color var(--transition-fast, 0.15s ease);
+  transition: right var(--transition-fast, 0.15s ease), background var(--transition-fast, 0.15s ease), border-color var(--transition-fast, 0.15s ease), color var(--transition-fast, 0.15s ease);
 }
 
 .mod-char-badge svg {

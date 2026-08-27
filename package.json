@@ -5,7 +5,14 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --linux"
+    "dist": "electron-builder --linux",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "dist:all": "electron-builder -mwl",
+    "build": "electron-builder --linux",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder -mwl"
   },
   "devDependencies": {
     "electron": "^43.2.0",
@@ -30,6 +37,21 @@
       "category": "Utility",
       "executableName": "WZMM-2.0",
       "artifactName": "WZMM-2.0.${ext}"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "WZMM-2.0-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "WZMM-2.0-Portable.${ext}"
     },
     "files": [
       "**/*",

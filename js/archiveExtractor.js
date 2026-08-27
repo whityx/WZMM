@@ -9,6 +9,8 @@ try {
   console.warn("AdmZip not available:", e.message);
 }
 
+const { isLinux } = require("./platform");
+
 let sevenZipBin = null;
 let sevenZipPath = null;
 try {
@@ -17,7 +19,7 @@ try {
     sevenZipPath = sevenZipBin.path7za;
     if (fs.existsSync(sevenZipPath)) {
       try {
-        fs.chmodSync(sevenZipPath, 0o755);
+        if (isLinux) fs.chmodSync(sevenZipPath, 0o755);
       } catch (e) { }
     }
   }
@@ -63,7 +65,7 @@ class ArchiveExtractor {
   static getSevenZipPath() {
     if (sevenZipPath && fs.existsSync(sevenZipPath)) {
       try {
-        fs.chmodSync(sevenZipPath, 0o755);
+        if (isLinux) fs.chmodSync(sevenZipPath, 0o755);
       } catch (e) { }
       return sevenZipPath;
     }

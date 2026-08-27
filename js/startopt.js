@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { spawn, execSync } = require("child_process");
+const { isWindows, isLinux, checkGameProcessCommand } = require("./platform");
 
 function notify(title, message, type = "info") {
   if (typeof window !== "undefined" && window.Toast) {
@@ -51,7 +52,7 @@ function findSteamAndGame() {
     "Zenless Zone Zero",
     "games",
     "ZenlessZoneZero Game",
-    "ZenlessZoneZero.exe",
+    "ZenlessZoneZero.exe"
   );
   for (const lib of libs) {
     const exePath = path.join(lib, gameRelPath);
@@ -86,24 +87,35 @@ function findProton(libs) {
   return null;
 }
 
+function checkGameStartup(settings, t) {
+  let attempts = 0;
+  const maxAttempts = 15;
+
+  const checkInterval = setInterval(() => {
+    attempts++;
+    try {
+      execSync(checkGameProcessCommand, { stdio: 'ignore' });
+      
+      clearInterval(checkInterval);
+      notify(t("start_success_title"), t("start_success_msg"), "success");
+
+      if (settings.minimizeTray) {
+        ipcRenderer.send("minimize-to-tray");
+      }
+    } catch (e) {
+      if (attempts >= maxAttempts) {
+        clearInterval(checkInterval);
+        notify(t("start_wait_title"), t("start_wait_msg"), "warning");
+      }
+    }
+  }, 2000);
+}
+
 module.exports = {
   launch: (settings, t) => {
     const binPath = settings.xxmiBinPath;
     if (!binPath) {
       notify(t("start_err_title"), t("start_err_bin"), "error");
-      return;
-    }
-
-    const steamInfo = findSteamAndGame();
-    if (!steamInfo || !steamInfo.gameExe) {
-      notify(t("start_err_title"), t("start_err_steam"), "error");
-      return;
-    }
-    const { steamDir, gameLib, gameExe, libs } = steamInfo;
-
-    const protonBin = findProton(libs);
-    if (!protonBin) {
-      notify(t("start_err_title"), t("start_err_proton"), "error");
       return;
     }
 
@@ -128,93 +140,110 @@ module.exports = {
       return;
     }
 
-    const APP_ID = "4162040";
-    const compatData = path.join(gameLib, "steamapps", "compatdata", APP_ID);
+    if (isLinux) {
+      const steamInfo = findSteamAndGame();
+      if (!steamInfo || !steamInfo.gameExe) {
+        notify(t("start_err_title"), t("start_err_steam"), "error");
+        return;
+      }
+      const { steamDir, gameLib, gameExe, libs } = steamInfo;
 
-    if (!fs.existsSync(compatData)) {
-      fs.mkdirSync(compatData, { recursive: true });
-    }
+      const protonBin = findProton(libs);
+      if (!protonBin) {
+        notify(t("start_err_title"), t("start_err_proton"), "error");
+        return;
+      }
 
-    notify(t("start_prep_title"), t("start_prep_msg"), "info");
+      const APP_ID = "4162040";
+      const compatData = path.join(gameLib, "steamapps", "compatdata", APP_ID);
 
-    const env = Object.assign({}, process.env, {
-      STEAM_COMPAT_DATA_PATH: compatData,
-      STEAM_COMPAT_CLIENT_INSTALL_PATH: steamDir,
-      STEAM_COMPAT_APP_ID: APP_ID,
-      SteamAppId: APP_ID,
-      SteamGameId: APP_ID,
-      SteamOverlayGameId: APP_ID,
-      SteamOS: "1",
-      DXVK_HUD: "0",
-      __GL_SHADER_DISK_CACHE: "0",
-      AMD_DISABLE_SHADER_CACHE: "1",
-      RESET_STEAM_SHADERS: "1",
-      PROTON_ENABLE_WAYLAND: "1",
-      SDL_VIDEO_FULLSCREEN_DISPLAY: "0",
-    });
+      if (!fs.existsSync(compatData)) {
+        fs.mkdirSync(compatData, { recursive: true });
+      }
 
-    const overlay32 = path.join(
-      steamDir,
-      "ubuntu12_32",
-      "gameoverlayrenderer.so",
-    );
-    const overlay64 = path.join(
-      steamDir,
-      "ubuntu12_64",
-      "gameoverlayrenderer.so",
-    );
-    if (fs.existsSync(overlay32) && fs.existsSync(overlay64)) {
-      const existingPreload = env.LD_PRELOAD || "";
-      const newPreload = `${overlay32}:${overlay64}`;
-      env.LD_PRELOAD = existingPreload
-        ? `${newPreload}:${existingPreload}`
-        : newPreload;
-    }
+      notify(t("start_prep_title"), t("start_prep_msg"), "info");
 
-    const appidTxt = path.join(path.dirname(gameExe), "steam_appid.txt");
-    fs.writeFileSync(appidTxt, APP_ID);
+      const env = Object.assign({}, process.env, {
+        STEAM_COMPAT_DATA_PATH: compatData,
+        STEAM_COMPAT_CLIENT_INSTALL_PATH: steamDir,
+        STEAM_COMPAT_APP_ID: APP_ID,
+        SteamAppId: APP_ID,
+        SteamGameId: APP_ID,
+        SteamOverlayGameId: APP_ID,
+        SteamOS: "1",
+        DXVK_HUD: "0",
+        __GL_SHADER_DISK_CACHE: "0",
+        AMD_DISABLE_SHADER_CACHE: "1",
+        RESET_STEAM_SHADERS: "1",
+        PROTON_ENABLE_WAYLAND: "1",
+        SDL_VIDEO_FULLSCREEN_DISPLAY: "0",
+      });
 
-    try {
-      const child = spawn(
-        protonBin,
-        ["run", xxmiExe, "--nogui", "--xxmi", "ZZMI"],
-        {
-          env: env,
-          detached: true,
-          stdio: "ignore",
-        },
+      const overlay32 = path.join(
+        steamDir,
+        "ubuntu12_32",
+        "gameoverlayrenderer.so"
       );
-      child.unref();
-
-      notify(t("start_launch_title"), t("start_launch_msg"), "info");
-
-      let attempts = 0;
-      const maxAttempts = 15;
-
-      const checkInterval = setInterval(() => {
-        attempts++;
-        try {
-          execSync('pgrep -f "ZenlessZoneZero"');
-
-          clearInterval(checkInterval);
-          notify(t("start_success_title"), t("start_success_msg"), "success");
-
-          if (settings.minimizeTray) {
-            ipcRenderer.send("minimize-to-tray");
-          }
-        } catch (e) {
-          if (attempts >= maxAttempts) {
-            clearInterval(checkInterval);
-            notify(t("start_wait_title"), t("start_wait_msg"), "warning");
-          }
-        }
-      }, 2000);
-    } catch (err) {
-      notify(
-        t("start_sys_err_title"),
-        t("start_sys_err_msg", { error: err.message }),
-        "error",
+      const overlay64 = path.join(
+        steamDir,
+        "ubuntu12_64",
+        "gameoverlayrenderer.so"
       );
+      if (fs.existsSync(overlay32) && fs.existsSync(overlay64)) {
+        const existingPreload = env.LD_PRELOAD || "";
+        const newPreload = `${overlay32}:${overlay64}`;
+        env.LD_PRELOAD = existingPreload
+          ? `${newPreload}:${existingPreload}`
+          : newPreload;
+      }
+
+      const appidTxt = path.join(path.dirname(gameExe), "steam_appid.txt");
+      fs.writeFileSync(appidTxt, APP_ID);
+
+      try {
+        const child = spawn(
+          protonBin,
+          ["run", xxmiExe, "--nogui", "--xxmi", "ZZMI"],
+          {
+            env: env,
+            detached: true,
+            stdio: "ignore",
+          }
+        );
+        child.unref();
+
+        notify(t("start_launch_title"), t("start_launch_msg"), "info");
+        checkGameStartup(settings, t);
+      } catch (err) {
+        notify(
+          t("start_sys_err_title"),
+          t("start_sys_err_msg", { error: err.message }),
+          "error"
+        );
+      }
+    } else if (isWindows) {
+      try {
+        notify(t("start_prep_title"), t("start_prep_msg"), "info");
+        const child = spawn(
+          xxmiExe,
+          ["--nogui", "--xxmi", "ZZMI"],
+          {
+            detached: true,
+            stdio: "ignore",
+            cwd: path.dirname(xxmiExe)
+          }
+        );
+        child.unref();
+
+        notify(t("start_launch_title"), t("start_launch_msg"), "info");
+        checkGameStartup(settings, t);
+      } catch (err) {
+        notify(
+          t("start_sys_err_title"),
+          t("start_sys_err_msg", { error: err.message }),
+          "error"
+        );
+      }
     }
-  },
+  }
 };

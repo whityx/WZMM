@@ -7,7 +7,9 @@ const http = require("http");
 
 
 
-const configDir = path.join(os.homedir(), ".config", "wzmm");
+const { getConfigDir } = require(path.join(__dirname, "js", "platform.js"));
+
+const configDir = getConfigDir();
 if (!fs.existsSync(configDir)) {
   fs.mkdirSync(configDir, { recursive: true });
 }
@@ -19,6 +21,7 @@ const GroupManager = require(path.join(__dirname, "js", "groupmanager.js"));
 const { SideMenuDownload, InstalledFilterDrawer } = require(path.join(__dirname, "js", "sideMenuFilter.js"));
 const ArchiveExtractor = require(path.join(__dirname, "js", "archiveExtractor.js"));
 const startOpt = require(path.join(__dirname, "js", "startopt.js"));
+const platformHelper = require(path.join(__dirname, "js", "platform.js"));
 const modManager = new ModManager();
 const groupManager = new GroupManager();
 
@@ -452,6 +455,42 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   initLightbox();
+
+  document.addEventListener("click", (e) => {
+    const anchor = e.target.closest("a");
+    if (anchor && anchor.href) {
+      const rawHref = anchor.getAttribute("href") || "";
+      if (
+        rawHref.startsWith("http://") ||
+        rawHref.startsWith("https://") ||
+        anchor.href.startsWith("http://") ||
+        anchor.href.startsWith("https://")
+      ) {
+        e.preventDefault();
+        shell.openExternal(anchor.href);
+      }
+    }
+  });
+
+  const sidebarLogo = document.querySelector(".sidebar-dynamic-logo");
+  if (sidebarLogo) {
+    let angle = 0;
+    let currentSpeed = 0.38;
+    let isHovered = false;
+
+    sidebarLogo.addEventListener("mouseenter", () => { isHovered = true; });
+    sidebarLogo.addEventListener("mouseleave", () => { isHovered = false; });
+    sidebarLogo.addEventListener("mousedown", () => { isHovered = true; });
+
+    const animateLogo = () => {
+      const targetSpeed = isHovered ? 2.8 : 0.38;
+      currentSpeed += (targetSpeed - currentSpeed) * 0.08;
+      angle = (angle + currentSpeed) % 360;
+      sidebarLogo.style.transform = `rotate(${angle}deg)`;
+      requestAnimationFrame(animateLogo);
+    };
+    requestAnimationFrame(animateLogo);
+  }
 
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
@@ -1845,6 +1884,22 @@ document.addEventListener("DOMContentLoaded", () => {
       return subId === targetCatId || cId === targetCatId || rootId === targetCatId;
     };
 
+    const fetchWithRetry = async (url, options = {}, retries = 2, delay = 800) => {
+      for (let i = 0; i <= retries; i++) {
+        try {
+          const res = await fetch(url, options);
+          if (res.ok) return res;
+          if (i === retries) return res;
+        } catch (err) {
+          if (err.name === "AbortError" || (options.signal && options.signal.aborted)) {
+            throw err;
+          }
+          if (i === retries) throw err;
+        }
+        await new Promise((r) => setTimeout(r, delay * Math.pow(1.5, i)));
+      }
+    };
+
     const fetchGBMods = async (append = false) => {
       if (gbAbortController && !append) {
         gbAbortController.abort();
@@ -1854,7 +1909,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       gbLoading = true;
       const loadingEl = document.getElementById("gb-loading");
-      if (loadingEl) loadingEl.style.display = "flex";
+      if (loadingEl && !append) loadingEl.style.display = "flex";
 
       const currentGrid = document.getElementById("gb-grid");
       if (!append) {
@@ -1887,27 +1942,26 @@ document.addEventListener("DOMContentLoaded", () => {
           const isRootCat = [30305, 30702, 30395, 30306].includes(selectedCatId);
           if (isRootCat) {
             const url = `https://gamebanana.com/apiv11/Util/Search/Results?_sModelName=Mod&_idGameRow=19567&_sSearchString=${encodeURIComponent(searchVal)}&_nPage=${gbPage}&_nPerpage=50&_csvProperties=${csvProps}`;
-            const res = await fetch(url, { signal: currentSignal });
+            const res = await fetchWithRetry(url, { signal: currentSignal });
             if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
             const data = await res.json();
             if (currentSignal.aborted) return;
             records = (data._aRecords || []).filter((r) => matchesCategory(r, selectedCatId));
             gbHasMore = false;
           } else {
-
-            const p1 = fetch(
+            const p1 = fetchWithRetry(
               `https://gamebanana.com/apiv11/Mod/Index?_nPage=1&_nPerpage=50&_aFilters[Generic_Category]=${selectedCatId}&_csvProperties=${csvProps}`,
               { signal: currentSignal }
             );
-            const p2 = fetch(
+            const p2 = fetchWithRetry(
               `https://gamebanana.com/apiv11/Mod/Index?_nPage=2&_nPerpage=50&_aFilters[Generic_Category]=${selectedCatId}&_csvProperties=${csvProps}`,
               { signal: currentSignal }
             );
-            const p3 = fetch(
+            const p3 = fetchWithRetry(
               `https://gamebanana.com/apiv11/Mod/Index?_nPage=3&_nPerpage=50&_aFilters[Generic_Category]=${selectedCatId}&_csvProperties=${csvProps}`,
               { signal: currentSignal }
             );
-            const pSearch = fetch(
+            const pSearch = fetchWithRetry(
               `https://gamebanana.com/apiv11/Util/Search/Results?_sModelName=Mod&_idGameRow=19567&_sSearchString=${encodeURIComponent(selectedCatName + " " + searchVal)}&_nPage=1&_nPerpage=50&_csvProperties=${csvProps}`,
               { signal: currentSignal }
             );
@@ -1952,7 +2006,7 @@ document.addEventListener("DOMContentLoaded", () => {
             url = `https://gamebanana.com/apiv11/Mod/Index?_nPage=${gbPage}&_nPerpage=30&_aFilters[Generic_Game]=19567&_sSort=${gbSort}&_csvProperties=${csvProps}`;
           }
 
-          const res = await fetch(url, { signal: currentSignal });
+          const res = await fetchWithRetry(url, { signal: currentSignal });
           if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
           const data = await res.json();
           if (currentSignal.aborted) return;
@@ -1971,10 +2025,8 @@ document.addEventListener("DOMContentLoaded", () => {
           cGrid.innerHTML =
             `<div style="color: var(--color-red); grid-column: 1 / -1; text-align: center; margin-top: 20px;">${t('gb_load_err')}</div>`;
       } finally {
-        if (!currentSignal.aborted) {
-          gbLoading = false;
-          if (loadingEl) loadingEl.style.display = "none";
-        }
+        gbLoading = false;
+        if (loadingEl) loadingEl.style.display = "none";
       }
     };
 
@@ -1994,11 +2046,32 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
 
-    if (grid) grid.onscroll = (e) => checkScroll(e.target);
+    const scrollTopBtn = document.getElementById("gb-scroll-top-btn");
+    const handleScroll = (target) => {
+      if (!target) return;
+      if (scrollTopBtn) {
+        if (target.scrollTop > 220) {
+          scrollTopBtn.style.display = "flex";
+          scrollTopBtn.classList.add("visible");
+        } else {
+          scrollTopBtn.classList.remove("visible");
+        }
+      }
+      checkScroll(target);
+    };
+
+    if (grid) grid.onscroll = (e) => handleScroll(e.target);
     const mainContent =
       document.getElementById("content-container") ||
       document.querySelector(".main-content");
-    if (mainContent) mainContent.onscroll = (e) => checkScroll(e.target);
+    if (mainContent) mainContent.onscroll = (e) => handleScroll(e.target);
+
+    if (scrollTopBtn) {
+      scrollTopBtn.onclick = () => {
+        if (mainContent) mainContent.scrollTo({ top: 0, behavior: "smooth" });
+        if (grid) grid.scrollTo({ top: 0, behavior: "smooth" });
+      };
+    }
 
     if (refreshBtn) refreshBtn.onclick = () => fetchGBMods(false);
     if (sortSelect) {
@@ -2070,6 +2143,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const renderGBGrid = (records, append = false) => {
     const grid = document.getElementById("gb-grid");
     if (!grid) return;
+
+    const loadingEl = document.getElementById("gb-loading");
+    if (loadingEl) loadingEl.style.display = "none";
 
     if (!append && records.length === 0) {
       grid.innerHTML =
@@ -2299,6 +2375,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const carouselContainer = document.getElementById("gb-carousel-container");
 
     imgEl.style.filter = "none";
+    imgEl.onerror = () => {
+      imgEl.onerror = null;
+      imgEl.src = "icons/cat.jpg";
+    };
 
     if (gbImages.length > 0) {
       gbImgIndex = 0;
@@ -2348,12 +2428,41 @@ document.addEventListener("DOMContentLoaded", () => {
       if (descEl) {
         descEl.innerHTML = itemData[0] || t('gb_desc_empty');
         descEl.querySelectorAll("img").forEach((dImg) => {
-          dImg.style.cursor = "pointer";
-          dImg.title = "Нажмите для увеличения";
-          dImg.onclick = (e) => {
-            e.stopPropagation();
-            if (dImg.src) openLightbox(dImg.src);
+          dImg.draggable = false;
+          dImg.onerror = () => {
+            dImg.onerror = null;
+            dImg.src = "icons/cat.jpg";
+            dImg.title = "";
+            dImg.style.cursor = "default";
+            dImg.onclick = null;
           };
+          const setupLoadedImg = () => {
+            if (dImg.naturalWidth > 0) {
+              if (dImg.src.includes("icons/cat.jpg")) {
+                dImg.style.cursor = "default";
+                dImg.title = "";
+                dImg.onclick = null;
+              } else {
+                dImg.style.cursor = "pointer";
+                dImg.title = t('gb_modal_img_zoom') || "Нажмите для увеличения";
+                dImg.onclick = (e) => {
+                  e.stopPropagation();
+                  if (dImg.src) openLightbox(dImg.src);
+                };
+              }
+            } else {
+              dImg.onerror = null;
+              dImg.src = "icons/cat.jpg";
+              dImg.style.cursor = "default";
+              dImg.title = "";
+              dImg.onclick = null;
+            }
+          };
+          if (dImg.complete) {
+            setupLoadedImg();
+          } else {
+            dImg.onload = setupLoadedImg;
+          }
         });
       }
       const filesObj = itemData[1];
@@ -2827,6 +2936,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const xxmiBinPathInput = document.getElementById("setting-xxmi-bin-path");
     const btnSelectXxmiBin = document.getElementById("btn-select-xxmi-bin");
+
+    if (xxmiPathInput) xxmiPathInput.placeholder = "Например: " + platformHelper.defaultXxmiPath;
+    if (xxmiBinPathInput) xxmiBinPathInput.placeholder = "Например: " + platformHelper.defaultXxmiBinPath;
 
     const nsfwModeSelect = document.getElementById("setting-nsfw-mode");
     const langSelect = document.getElementById("language-selector");

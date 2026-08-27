@@ -439,6 +439,10 @@
   display: flex;
 }
 
+.group-mode-active .mod-card .mod-char-badge {
+  right: 42px;
+}
+
 .mod-card.selected-for-group .mod-select-indicator {
   background: var(--accent);
   border-color: var(--accent);

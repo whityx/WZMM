@@ -4,7 +4,7 @@ const os = require("os");
 
 class GroupManager {
   constructor() {
-    this.groupsDir = path.join(os.homedir(), ".config", "wzmm", "groups");
+    this.groupsDir = path.join(require("./platform").getConfigDir(), "groups");
     if (!fs.existsSync(this.groupsDir)) {
       fs.mkdirSync(this.groupsDir, { recursive: true });
     }
