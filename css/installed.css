@@ -25,27 +25,61 @@
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
-  padding: 10px 16px 10px 38px;
+  padding: 10px 16px 10px 40px;
   border-radius: var(--radius-md);
   font-size: 0.9rem;
+  font-family: inherit;
   outline: none;
-  transition: var(--transition-fast);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease, color 0.25s ease;
+}
+
+.mods-search-input::placeholder {
+  color: var(--text-muted);
+  transition: color 0.25s ease, opacity 0.25s ease;
+}
+
+.mods-search-input:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.05));
+}
+
+.mods-search-input:hover::placeholder {
+  color: var(--text-secondary);
 }
 
 .mods-search-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-dim);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px var(--accent-dim), 0 8px 24px -4px rgba(0, 0, 0, 0.35);
+}
+
+.mods-search-input:focus::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .search-icon {
   position: absolute;
-  left: 12px;
+  left: 14px;
   top: 50%;
-  transform: translateY(-50%);
+  transform: translateY(-50%) rotate(0deg) scale(1);
+  transform-origin: 46% 46%;
   width: 16px;
   height: 16px;
   color: var(--text-muted);
   pointer-events: none;
+  transition: color 0.25s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.search-wrapper:hover .search-icon {
+  color: var(--text-primary);
+  transform: translateY(-50%) rotate(-12deg) scale(1.06);
+}
+
+.search-wrapper:focus-within .search-icon {
+  color: var(--accent);
+  transform: translateY(-50%) rotate(-12deg) scale(1.06);
 }
 
 .filter-container {

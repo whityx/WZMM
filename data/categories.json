@@ -3,7 +3,7 @@
     {
       "id": 30305,
       "name": "Character Skins",
-      "modCount": 4735,
+      "modCount": 4787,
       "iconUrl": "https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif"
     },
     {
@@ -13,16 +13,28 @@
       "iconUrl": "https://images.gamebanana.com/img/ico/ModCategory/669c13bb037b1.png"
     },
     {
-      "id": 29874,
-      "name": "Other/Misc",
+      "id": 30395,
+      "name": "UI",
       "modCount": 262,
+      "iconUrl": "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png"
+    },
+    {
+      "id": 37775,
+      "name": "Character UI",
+      "modCount": 262,
+      "iconUrl": "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png"
+    },
+    {
+      "id": 33758,
+      "name": "Icons",
+      "modCount": 160,
       "iconUrl": "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png"
     },
     {
-      "id": 30395,
-      "name": "UI",
-      "modCount": 259,
-      "iconUrl": "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png"
+      "id": 29874,
+      "name": "Other/Misc",
+      "modCount": 103,
+      "iconUrl": "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png"
     }
   ],
   "characters": [

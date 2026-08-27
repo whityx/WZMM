@@ -175,21 +175,34 @@ class ModManager {
         this.bangboo = baseData.bangboo || [];
       }
 
+      const isInvalidCategory = (c) => {
+        if (!c || !c.name) return true;
+        const id = Number(c.id);
+        const name = c.name.trim().toLowerCase();
+        if ([30305, 30702, 29874, 30395, 37775, 33758, 3993].includes(id)) return true;
+        if (["character ui", "icons", "other/misc", "ui", "other", "misc"].includes(name)) return true;
+        return false;
+      };
+
       if (fs.existsSync(this.subcatsCacheFile)) {
         const cached = JSON.parse(fs.readFileSync(this.subcatsCacheFile, "utf-8"));
         if (cached.characters && cached.characters.length > 0) {
           const map = new Map();
-          this.characters.forEach((c) => map.set(c.id, c));
+          this.characters.forEach((c) => {
+            if (!isInvalidCategory(c)) map.set(c.id, c);
+          });
           cached.characters.forEach((c) => {
-            if (!map.has(c.id)) map.set(c.id, c);
+            if (!isInvalidCategory(c) && !map.has(c.id)) map.set(c.id, c);
           });
           this.characters = Array.from(map.values());
         }
         if (cached.bangboo && cached.bangboo.length > 0) {
           const map = new Map();
-          this.bangboo.forEach((b) => map.set(b.id, b));
+          this.bangboo.forEach((b) => {
+            if (!isInvalidCategory(b)) map.set(b.id, b);
+          });
           cached.bangboo.forEach((b) => {
-            if (!map.has(b.id)) map.set(b.id, b);
+            if (!isInvalidCategory(b) && !map.has(b.id)) map.set(b.id, b);
           });
           this.bangboo = Array.from(map.values());
         }
@@ -242,6 +255,24 @@ class ModManager {
         iconUrl: this.getCharacterIconPath(b.iconUrl),
         isBangboo: true,
       });
+    });
+
+    list.push({
+      id: 37775,
+      name: "Character UI",
+      localizedName: lang === "ru" ? "Интерфейс персонажей" : "Character UI",
+      category: "UI",
+      iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png",
+      isOther: false,
+    });
+
+    list.push({
+      id: 33758,
+      name: "Icons",
+      localizedName: lang === "ru" ? "Иконки" : "Icons",
+      category: "Other/Misc",
+      iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png",
+      isOther: false,
     });
 
     list.push({
@@ -407,6 +438,8 @@ class ModManager {
 
 
     const aliasMap = [
+      { names: ["character ui", "char ui", "интерфейс персонажей"], target: "Character UI" },
+      { names: ["icons", "icon", "иконки", "иконка"], target: "Icons" },
       { names: ["ellen joe", "ellen", "эллен джо", "эллен"], target: "Ellen Joe" },
       { names: ["jane doe", "jane", "джейн доу", "джейн"], target: "Jane Doe" },
       { names: ["hoshimi miyabi", "miyabi", "хосими мияби", "мияби"], target: "Hoshimi Miyabi" },
@@ -457,13 +490,32 @@ class ModManager {
 
           const locName = this.getLocalizedCharacterName(matchedName, lang);
           const isBangboo = matchedName === "Bangboo" || this.bangboo.some((b) => b.name.toLowerCase() === matchedName.toLowerCase());
+          const isUI = matchedName === "Character UI";
+          const isIcons = matchedName === "Icons";
+
+          let category = "Character Skins";
+          let charId = foundChar ? foundChar.id : null;
+          let iconUrl = foundChar ? this.getCharacterIconPath(foundChar.iconUrl) : null;
+
+          if (isBangboo) {
+            category = "Bangboo Skins";
+            if (!charId) charId = 30702;
+          } else if (isUI) {
+            category = "UI";
+            charId = 37775;
+            iconUrl = "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png";
+          } else if (isIcons) {
+            category = "Other/Misc";
+            charId = 33758;
+            iconUrl = "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png";
+          }
 
           const metaResult = {
             character: matchedName,
             characterLocalized: locName,
-            characterId: foundChar ? foundChar.id : (isBangboo ? 30702 : null),
-            category: isBangboo ? "Bangboo Skins" : "Character Skins",
-            iconUrl: foundChar ? this.getCharacterIconPath(foundChar.iconUrl) : null,
+            characterId: charId,
+            category: category,
+            iconUrl: iconUrl,
           };
 
           this.setModMetadata(modName, metaResult, modFolderPaths);

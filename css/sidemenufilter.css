@@ -3,12 +3,13 @@
   inset: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--bg-modal-overlay, rgba(0, 0, 0, 0.65));
   z-index: 10000;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s ease;
+  backdrop-filter: blur(4px);
 }
 
 .gb-drawer-backdrop.open {
@@ -25,9 +26,9 @@
   max-width: 88vw;
   height: 100vh;
   height: 100dvh;
-  background: #13171f;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.65);
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-lg, -10px 0 40px rgba(0, 0, 0, 0.65));
   z-index: 10001;
   display: flex;
   flex-direction: column;
@@ -63,8 +64,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #13171f;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
   flex-shrink: 0;
 }
 
@@ -77,36 +78,35 @@
 .gb-drawer-icon {
   width: 18px;
   height: 18px;
-  color: var(--accent, #3b82f6);
+  color: var(--accent);
   flex-shrink: 0;
 }
 
 .gb-drawer-title {
   font-size: 1.05rem;
   font-weight: 700;
-  color: var(--text-primary, #ffffff);
+  color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
 .gb-drawer-close-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: var(--text-muted, #94a3b8);
-  font-size: 1rem;
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm, 8px);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition: var(--transition-fast, all 0.15s ease);
 }
 
 .gb-drawer-close-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text-primary);
   transform: scale(1.05);
 }
 
@@ -125,12 +125,12 @@
 }
 
 .gb-drawer-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--scrollbar-thumb, rgba(255, 255, 255, 0.12));
   border-radius: 4px;
 }
 
 .gb-drawer-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--scrollbar-thumb-hover, rgba(255, 255, 255, 0.25));
 }
 
 .gb-filter-section {
@@ -145,29 +145,31 @@
 
 .gb-filter-section .mods-filter-select {
   width: 100%;
-  background-color: #1a202c;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
   padding: 9px 36px 9px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm, 8px);
   font-size: 0.88rem;
+  font-family: inherit;
+  transition: var(--transition-fast, all 0.15s ease);
 }
 
 .gb-filter-section .mods-filter-select:hover,
 .gb-filter-section .mods-filter-select:focus {
   border-color: var(--accent);
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: var(--bg-surface-hover);
 }
 
 .gb-filter-section .mods-filter-select option {
-  background-color: #1a202c !important;
-  color: #ffffff !important;
+  background-color: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
   padding: 10px 14px;
 }
 
 .gb-filter-section .mods-filter-select option:checked {
   background-color: var(--accent) !important;
-  color: #ffffff !important;
+  color: var(--text-on-accent, #ffffff) !important;
 }
 
 .gb-section-header {
@@ -179,7 +181,7 @@
 .gb-filter-label {
   font-size: 0.82rem;
   font-weight: 600;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -192,8 +194,8 @@
   font-weight: 600;
   cursor: pointer;
   padding: 2px 6px;
-  border-radius: 4px;
-  transition: all 0.15s ease;
+  border-radius: var(--radius-sm, 4px);
+  transition: var(--transition-fast, all 0.15s ease);
 }
 
 .gb-reset-filter-btn:hover {
@@ -206,17 +208,17 @@
   align-items: center;
   justify-content: space-between;
   padding: 9px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm, 8px);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-fast, all 0.15s ease);
   user-select: none;
 }
 
 .gb-cat-nav-item:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--bg-surface-hover);
+  border-color: var(--border-hover);
 }
 
 .gb-cat-nav-item.active {
@@ -227,7 +229,7 @@
 .gb-cat-nav-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--text-primary, #ffffff);
+  color: var(--text-primary);
 }
 
 .gb-subcat-search-box {
@@ -238,24 +240,25 @@
 
 .gb-subcat-search-input {
   width: 100%;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  background: var(--bg-main);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm, 8px);
   padding: 9px 12px;
   font-size: 0.88rem;
-  color: var(--text-primary, #ffffff);
+  color: var(--text-primary);
+  font-family: inherit;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .gb-subcat-search-input:focus {
   border-color: var(--accent);
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--bg-surface);
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .gb-subcat-search-input::placeholder {
-  color: var(--text-muted, #64748b);
+  color: var(--text-muted);
 }
 
 .gb-categories-tree {
@@ -275,17 +278,17 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm, 8px);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-fast, all 0.15s ease);
   user-select: none;
 }
 
 .gb-category-row:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--bg-surface-hover);
+  border-color: var(--border-hover);
 }
 
 .gb-category-row.active {
@@ -301,24 +304,26 @@
   flex: 1;
 }
 
+.gb-cat-icon-svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
 .gb-root-icon-img {
   width: 26px;
   height: 26px;
   object-fit: contain;
   border-radius: 6px;
   flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.gb-cat-icon-emoji {
-  font-size: 1.1rem;
-  flex-shrink: 0;
+  background: var(--bg-surface-dark, rgba(0, 0, 0, 0.2));
 }
 
 .gb-category-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--text-primary, #ffffff);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -332,8 +337,8 @@
 }
 
 .gb-mod-count-badge {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-muted, #94a3b8);
+  background: var(--border-subtle, rgba(255, 255, 255, 0.08));
+  color: var(--text-muted);
   font-size: 0.74rem;
   font-weight: 700;
   padding: 2px 8px;
@@ -343,14 +348,21 @@
 .gb-node-arrow {
   background: transparent;
   border: none;
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted);
   font-size: 0.75rem;
   cursor: pointer;
   padding: 4px;
-  transition: transform 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, color 0.2s ease;
 }
 
-.gb-category-node.expanded>.gb-category-row .gb-node-arrow {
+.gb-node-arrow:hover {
+  color: var(--text-primary);
+}
+
+.gb-category-node.expanded > .gb-category-row .gb-node-arrow {
   transform: rotate(180deg);
 }
 
@@ -360,10 +372,10 @@
   gap: 3px;
   padding-left: 10px;
   margin-top: 4px;
-  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  border-left: 2px solid var(--border-subtle);
 }
 
-.gb-category-node.expanded>.gb-subcat-group {
+.gb-category-node.expanded > .gb-subcat-group {
   display: flex;
 }
 
@@ -372,16 +384,16 @@
   align-items: center;
   justify-content: space-between;
   padding: 7px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm, 6px);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: var(--transition-fast, all 0.15s ease);
   user-select: none;
   border: 1px solid transparent;
 }
 
 .gb-subcat-row:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--bg-surface-hover);
+  border-color: var(--border-subtle);
 }
 
 .gb-subcat-row.active {
@@ -404,14 +416,14 @@
   object-fit: cover;
   border-radius: 6px;
   flex-shrink: 0;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-surface-dark, rgba(0, 0, 0, 0.3));
+  border: 1px solid var(--border-subtle);
 }
 
 .gb-subcat-name {
   font-size: 0.86rem;
   font-weight: 500;
-  color: var(--text-primary, #ffffff);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -425,7 +437,7 @@
 }
 
 .gb-filter-empty {
-  color: var(--text-muted, #94a3b8);
+  color: var(--text-muted);
   font-size: 0.85rem;
   text-align: center;
   padding: 16px 0;
@@ -435,20 +447,20 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: var(--bg-surface, #1e242c);
-  color: var(--text-primary, #ffffff);
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md, 8px);
   padding: 8px 14px;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--transition-fast, all 0.2s ease);
   user-select: none;
 }
 
 .gb-filter-btn:hover {
-  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.08));
+  background: var(--bg-surface-hover);
   border-color: var(--accent);
   transform: translateY(-1px);
 }

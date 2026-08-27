@@ -1293,7 +1293,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return `
           <div class="modal-char-picker-item ${isSelected ? "active" : ""}" data-name="${encodeURIComponent(item.name)}" data-loc="${encodeURIComponent(item.localizedName)}" data-id="${item.id || ""}" data-cat="${encodeURIComponent(item.category || "")}">
             <div class="modal-char-picker-left">
-              ${isSpecial ? `<span style="font-size: 1.1rem; width: 22px; text-align: center;">📁</span>` : `<img class="modal-char-picker-avatar" src="${iconSrc}" alt="" onerror="this.onerror=null; this.src='${fallbackIcon}';">`}
+              ${isSpecial ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text-secondary);"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>` : `<img class="modal-char-picker-avatar" src="${iconSrc}" alt="" onerror="this.onerror=null; this.src='${fallbackIcon}';">`}
               <span class="modal-char-picker-name">${item.localizedName || item.name}</span>
             </div>
             <span class="modal-char-picker-cat-badge">${item.category || ""}</span>
@@ -1798,7 +1798,12 @@ document.addEventListener("DOMContentLoaded", () => {
           bar.innerHTML = `
             <div class="gb-filter-pill">
               <span>${t('gb_active_filter_tag', { name: categoryName })}</span>
-              <button id="gb-clear-tag-btn" class="gb-filter-pill-btn" title="${t('gb_filter_reset')}">✕</button>
+              <button id="gb-clear-tag-btn" class="gb-filter-pill-btn" title="${t('gb_filter_reset')}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
           `;
           const clearTagBtn = document.getElementById("gb-clear-tag-btn");
@@ -2479,7 +2484,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const previewUrlToPass = gbImages.length > 0 ? gbImages[0] : null;
 
-        Object.values(filesObj).forEach((file) => {
+        const sortedFiles = Object.values(filesObj).sort((a, b) => {
+          const timeA = Number(a._tsDateAdded) || Number(a._idRow) || 0;
+          const timeB = Number(b._tsDateAdded) || Number(b._idRow) || 0;
+          return timeB - timeA;
+        });
+
+        sortedFiles.forEach((file) => {
           const fDiv = document.createElement("div");
           fDiv.className = "gb-file-item";
 

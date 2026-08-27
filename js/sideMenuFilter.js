@@ -29,6 +29,13 @@ class SideMenuDownload {
     this.rootCategories = [];
     this.characters = [];
     this.bangboo = [];
+    this.uiSubcategories = [
+      { id: 37775, name: "Character UI", iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png" }
+    ];
+    this.miscSubcategories = [
+      { id: 33758, name: "Icons", iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png" },
+      { id: 3993, name: "Other/Misc", iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png" }
+    ];
     this.charactersI18n = {};
 
     this._onKeyDown = (e) => {
@@ -69,23 +76,52 @@ class SideMenuDownload {
         this.bangboo = baseData.bangboo || [];
       }
 
+      const isInvalidCategory = (c) => {
+        if (!c || !c.name) return true;
+        const id = Number(c.id);
+        const name = c.name.trim().toLowerCase();
+        if ([30305, 30702, 29874, 30395, 37775, 33758, 3993].includes(id)) return true;
+        if (["character ui", "icons", "other/misc", "ui", "other", "misc"].includes(name)) return true;
+        return false;
+      };
+
       if (fs.existsSync(this.subcatsCacheFile)) {
         const cached = JSON.parse(fs.readFileSync(this.subcatsCacheFile, "utf-8"));
         if (cached.characters && cached.characters.length > 0) {
           const map = new Map();
-          this.characters.forEach(c => map.set(c.id, c));
+          this.characters.forEach(c => {
+            if (!isInvalidCategory(c)) map.set(c.id, c);
+          });
           cached.characters.forEach(c => {
-            if (!map.has(c.id)) map.set(c.id, c);
+            if (!isInvalidCategory(c) && !map.has(c.id)) map.set(c.id, c);
           });
           this.characters = Array.from(map.values());
         }
         if (cached.bangboo && cached.bangboo.length > 0) {
           const map = new Map();
-          this.bangboo.forEach(b => map.set(b.id, b));
+          this.bangboo.forEach(b => {
+            if (!isInvalidCategory(b)) map.set(b.id, b);
+          });
           cached.bangboo.forEach(b => {
-            if (!map.has(b.id)) map.set(b.id, b);
+            if (!isInvalidCategory(b) && !map.has(b.id)) map.set(b.id, b);
           });
           this.bangboo = Array.from(map.values());
+        }
+        if (cached.uiSubcategories && cached.uiSubcategories.length > 0) {
+          const map = new Map();
+          this.uiSubcategories.forEach(u => map.set(u.id, u));
+          cached.uiSubcategories.forEach(u => {
+            if (!map.has(u.id)) map.set(u.id, u);
+          });
+          this.uiSubcategories = Array.from(map.values());
+        }
+        if (cached.miscSubcategories && cached.miscSubcategories.length > 0) {
+          const map = new Map();
+          this.miscSubcategories.forEach(m => map.set(m.id, m));
+          cached.miscSubcategories.forEach(m => {
+            if (!map.has(m.id)) map.set(m.id, m);
+          });
+          this.miscSubcategories = Array.from(map.values());
         }
       }
       this.saveSubcategoriesCache();
@@ -102,7 +138,9 @@ class SideMenuDownload {
         JSON.stringify({
           rootCategories: this.rootCategories,
           characters: this.characters,
-          bangboo: this.bangboo
+          bangboo: this.bangboo,
+          uiSubcategories: this.uiSubcategories,
+          miscSubcategories: this.miscSubcategories
         }, null, 2),
         "utf-8"
       );
@@ -167,13 +205,49 @@ class SideMenuDownload {
         });
 
         if (res && res._aModRootCategories && Array.isArray(res._aModRootCategories)) {
-          this.rootCategories = res._aModRootCategories.map(cat => ({
-            id: cat._idRow,
-            name: cat._sName,
-            modCount: cat._nItemCount,
-            subcatCount: cat._nCategoryCount,
-            iconUrl: cat._sIconUrl
-          }));
+          const roots = [];
+          for (const cat of res._aModRootCategories) {
+            if (cat._idRow === 30395) {
+              roots.push({
+                id: 30395,
+                name: "UI",
+                modCount: cat._nItemCount,
+                subcatCount: 0,
+                iconUrl: cat._sIconUrl || "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png"
+              });
+              roots.push({
+                id: 37775,
+                name: "Character UI",
+                modCount: cat._nItemCount,
+                subcatCount: 0,
+                iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png"
+              });
+            } else if (cat._idRow === 29874) {
+              roots.push({
+                id: 33758,
+                name: "Icons",
+                modCount: 160,
+                subcatCount: 0,
+                iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png"
+              });
+              roots.push({
+                id: 29874,
+                name: "Other/Misc",
+                modCount: cat._nItemCount,
+                subcatCount: 0,
+                iconUrl: cat._sIconUrl || "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png"
+              });
+            } else {
+              roots.push({
+                id: cat._idRow,
+                name: cat._sName,
+                modCount: cat._nItemCount,
+                subcatCount: cat._nCategoryCount,
+                iconUrl: cat._sIconUrl
+              });
+            }
+          }
+          this.rootCategories = roots;
           this.saveSubcategoriesCache();
           this.updateSubcategoriesListUI();
           break;
@@ -192,21 +266,33 @@ class SideMenuDownload {
         const match = mod._aSubCategory._sProfileUrl.match(/cats\/(\d+)/);
         if (match) {
           const subId = parseInt(match[1]);
-          if ([30305, 30702, 29874, 30395].includes(subId)) continue;
+          if ([30305, 30702, 29874, 30395, 37775, 33758, 3993].includes(subId)) continue;
           const subName = mod._aSubCategory._sName.trim();
           if (!subName || subName.length < 2) continue;
+          if (["character ui", "icons", "other/misc", "ui", "other", "misc"].includes(subName.toLowerCase())) continue;
           const subIcon = mod._aSubCategory._sIconUrl || "";
-          const rootName = mod._aRootCategory ? mod._aRootCategory._sName : "Character Skins";
+          const rootName = (mod._aRootCategory ? mod._aRootCategory._sName : "").toLowerCase();
+          const rootId = mod._aRootCategory ? mod._aRootCategory._idRow : null;
 
-          const isBangboo = rootName.toLowerCase().includes("bangboo") || subName.toLowerCase().includes("boo");
-          const targetList = isBangboo ? this.bangboo : this.characters;
+          let targetList = null;
+          let defaultIcon = "https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif";
+
+          if (rootId === 30702 || rootName.includes("bangboo") || subName.toLowerCase().includes("boo")) {
+            targetList = this.bangboo;
+            defaultIcon = "https://images.gamebanana.com/img/ico/ModCategory/669c13bb037b1.png";
+          } else if (rootId === 30305 || rootName.includes("character")) {
+            targetList = this.characters;
+            defaultIcon = "https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif";
+          }
+
+          if (!targetList) continue;
 
           const exists = targetList.some(item => item.id === subId || item.name.toLowerCase() === subName.toLowerCase());
           if (!exists) {
             targetList.push({
               id: subId,
               name: subName,
-              iconUrl: subIcon || (isBangboo ? "https://images.gamebanana.com/img/ico/ModCategory/669c13bb037b1.png" : "https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif")
+              iconUrl: subIcon || defaultIcon
             });
             targetList.sort((a, b) => a.name.localeCompare(b.name));
             hasNew = true;
@@ -238,7 +324,12 @@ class SideMenuDownload {
             </svg>
             <span class="gb-drawer-title">${t("gb_filter_drawer_title")}</span>
           </div>
-          <button class="gb-drawer-close-btn" id="gb-drawer-close-btn" title="✕">✕</button>
+          <button class="gb-drawer-close-btn" id="gb-drawer-close-btn" title="✕">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
 
         <div class="gb-drawer-body">
@@ -275,7 +366,9 @@ class SideMenuDownload {
 
             <div class="gb-cat-nav-item ${this.selectedCategoryId === null ? "active" : ""}" data-id="all">
               <div class="gb-cat-left">
-                <span class="gb-cat-icon-emoji">📁</span>
+                <svg class="gb-cat-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
                 <span class="gb-cat-nav-name">${t("gb_filter_all_cats")}</span>
               </div>
             </div>
@@ -304,59 +397,48 @@ class SideMenuDownload {
       const formattedModCount = this.formatCount(rootCat.modCount);
       const locRootName = this.getLocalizedName(rootCat.name);
 
+      let subList = [];
+      if (isCharSkins) subList = this.characters;
+      else if (isBangboo) subList = this.bangboo;
+
+      const hasSub = subList && subList.length > 0;
+
       let subListHtml = "";
-      if (isCharSkins) {
+      if (hasSub) {
         subListHtml = `
-          <div class="gb-subcat-group" id="gb-char-subcats">
-            ${this.characters.map(c => {
-          const cIcon = this.getCachedIconPath(c.iconUrl) || "https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif";
-          const isActive = this.selectedCategoryId === c.id;
-          const locName = this.getLocalizedName(c.name);
-          const count = this.formatCount(c.modCount);
-          return `
-                <div class="gb-subcat-row ${isActive ? "active" : ""}" data-id="${c.id}" data-name="${c.name}" data-localized-name="${locName}">
+          <div class="gb-subcat-group">
+            ${subList.map(item => {
+              const defaultFallback = isBangboo
+                ? "https://images.gamebanana.com/img/ico/ModCategory/669c13bb037b1.png"
+                : "https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif";
+              const cIcon = this.getCachedIconPath(item.iconUrl) || defaultFallback;
+              const isActive = this.selectedCategoryId === item.id;
+              const locName = this.getLocalizedName(item.name);
+              const count = this.formatCount(item.modCount);
+              return `
+                <div class="gb-subcat-row ${isActive ? "active" : ""}" data-id="${item.id}" data-name="${item.name}" data-localized-name="${locName}">
                   <div class="gb-subcat-left">
-                    <img class="gb-avatar-img" src="${cIcon}" alt="" onerror="this.onerror=null; this.src='https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif';">
+                    <img class="gb-avatar-img" src="${cIcon}" alt="" onerror="this.onerror=null; this.src='${defaultFallback}';">
                     <span class="gb-subcat-name">${locName}</span>
                   </div>
                   ${count !== undefined && count !== null && count !== "" ? `<span class="gb-mod-count-badge">${count}</span>` : ""}
                 </div>
               `;
-        }).join("")}
-          </div>
-        `;
-      } else if (isBangboo) {
-        subListHtml = `
-          <div class="gb-subcat-group" id="gb-bangboo-subcats">
-            ${this.bangboo.map(b => {
-          const bIcon = this.getCachedIconPath(b.iconUrl) || "https://images.gamebanana.com/img/ico/ModCategory/669c13bb037b1.png";
-          const isActive = this.selectedCategoryId === b.id;
-          const locName = this.getLocalizedName(b.name);
-          const count = this.formatCount(b.modCount);
-          return `
-                <div class="gb-subcat-row ${isActive ? "active" : ""}" data-id="${b.id}" data-name="${b.name}" data-localized-name="${locName}">
-                  <div class="gb-subcat-left">
-                    <img class="gb-avatar-img" src="${bIcon}" alt="" onerror="this.onerror=null; this.src='https://images.gamebanana.com/img/ico/ModCategory/669c13bb037b1.png';">
-                    <span class="gb-subcat-name">${locName}</span>
-                  </div>
-                  ${count !== undefined && count !== null && count !== "" ? `<span class="gb-mod-count-badge">${count}</span>` : ""}
-                </div>
-              `;
-        }).join("")}
+            }).join("")}
           </div>
         `;
       }
 
       return `
-        <div class="gb-category-node ${(isCharSkins || isBangboo) ? "has-sub" : ""} ${isCharSkins ? "expanded" : ""}">
+        <div class="gb-category-node ${hasSub ? "has-sub" : ""} ${isCharSkins ? "expanded" : ""}">
           <div class="gb-category-row ${isRootActive ? "active" : ""}" data-id="${rootCat.id}" data-name="${rootCat.name}" data-localized-name="${locRootName}">
             <div class="gb-cat-left">
-              ${iconSrc ? `<img class="gb-root-icon-img" src="${iconSrc}" alt="" onerror="this.style.display='none'">` : `<span class="gb-cat-icon-emoji">📂</span>`}
+              ${iconSrc ? `<img class="gb-root-icon-img" src="${iconSrc}" alt="" onerror="this.style.display='none'">` : `<svg class="gb-cat-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`}
               <span class="gb-category-name">${locRootName}</span>
             </div>
             <div class="gb-cat-right">
               ${formattedModCount ? `<span class="gb-mod-count-badge">${formattedModCount}</span>` : ""}
-              ${(isCharSkins || isBangboo) ? `<button class="gb-node-arrow" type="button">▼</button>` : ""}
+              ${hasSub ? `<button class="gb-node-arrow" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>` : ""}
             </div>
           </div>
           ${subListHtml}
@@ -482,7 +564,7 @@ class SideMenuDownload {
           return;
         }
 
-        if (node && (catId === 30305 || catId === 30702)) {
+        if (node && node.classList.contains("has-sub")) {
           node.classList.add("expanded");
         }
 
@@ -673,7 +755,12 @@ class InstalledFilterDrawer {
             </svg>
             <span class="gb-drawer-title">${t("installed_filter_drawer_title")}</span>
           </div>
-          <button class="gb-drawer-close-btn" id="installed-drawer-close-btn" title="✕">✕</button>
+          <button class="gb-drawer-close-btn" id="installed-drawer-close-btn" title="✕">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
 
         <div class="gb-drawer-body">
@@ -685,7 +772,9 @@ class InstalledFilterDrawer {
 
             <div class="gb-cat-nav-item ${this.selectedCharacter === null ? "active" : ""}" data-name="all">
               <div class="gb-cat-left">
-                <span class="gb-cat-icon-emoji">📁</span>
+                <svg class="gb-cat-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
                 <span class="gb-cat-nav-name">${t("installed_filter_char_all")}</span>
               </div>
               <span class="gb-mod-count-badge" id="installed-total-count-badge">0</span>
@@ -807,7 +896,12 @@ class InstalledFilterDrawer {
       bar.innerHTML = `
         <div class="gb-filter-pill">
           <span>${this.t("installed_filter_active_tag", { name: displayName })}</span>
-          <button class="gb-filter-pill-btn" id="btn-clear-char-filter" title="${this.t("gb_filter_reset")}">✕</button>
+          <button class="gb-filter-pill-btn" id="btn-clear-char-filter" title="${this.t("gb_filter_reset")}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
       `;
 
