@@ -8,11 +8,11 @@
     "dist": "electron-builder --linux",
     "dist:win": "electron-builder --win",
     "dist:linux": "electron-builder --linux",
-    "dist:all": "electron-builder -mwl",
+    "dist:all": "electron-builder -wl",
     "build": "electron-builder --linux",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder -mwl"
+    "build:all": "electron-builder -wl"
   },
   "devDependencies": {
     "electron": "^43.2.0",
