@@ -3,6 +3,7 @@
   "version": "2.1.0",
   "description": "ZZZ Mod Manager for windows & linux",
   "main": "main.js",
+  "author": "whityx",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --linux",
