@@ -63,73 +63,26 @@ class SideMenuDownload {
 
   loadInitialCatalog() {
     try {
-      const defaultDataPath = path.join(__dirname, "..", "data", "categories.json");
-      if (fs.existsSync(defaultDataPath)) {
-        const baseData = JSON.parse(fs.readFileSync(defaultDataPath, "utf-8"));
-        this.rootCategories = baseData.rootCategories || [];
-        this.characters = baseData.characters || [];
-        this.bangboo = baseData.bangboo || [];
-
-        const uiCat = this.rootCategories.find((r) => r.id === 37775 || r.name === "Character UI");
-        if (uiCat) this.uiSubcategories = [{ id: uiCat.id, name: uiCat.name, iconUrl: uiCat.iconUrl }];
-
-        const iconCat = this.rootCategories.find((r) => r.id === 33758 || r.name === "Icons");
-        const miscCat = this.rootCategories.find((r) => r.id === 29874 || r.id === 3993 || r.name === "Other/Misc");
-        this.miscSubcategories = [];
-        if (iconCat) this.miscSubcategories.push({ id: iconCat.id, name: iconCat.name, iconUrl: iconCat.iconUrl });
-        if (miscCat) this.miscSubcategories.push({ id: miscCat.id, name: miscCat.name, iconUrl: miscCat.iconUrl });
-      }
-
-      const rootIds = new Set((this.rootCategories || []).map((r) => Number(r.id)));
-      const isInvalidCategory = (c) => {
-        if (!c || !c.name) return true;
-        const id = Number(c.id);
-        const name = c.name.trim().toLowerCase();
-        if (rootIds.has(id)) return true;
-        if (["character ui", "icons", "other/misc", "ui", "other", "misc"].includes(name)) return true;
-        return false;
-      };
-
       if (fs.existsSync(this.subcatsCacheFile)) {
         const cached = JSON.parse(fs.readFileSync(this.subcatsCacheFile, "utf-8"));
-        if (cached.characters && cached.characters.length > 0) {
-          const map = new Map();
-          this.characters.forEach(c => {
-            if (!isInvalidCategory(c)) map.set(c.id, c);
-          });
-          cached.characters.forEach(c => {
-            if (!isInvalidCategory(c) && !map.has(c.id)) map.set(c.id, c);
-          });
-          this.characters = Array.from(map.values());
-        }
-        if (cached.bangboo && cached.bangboo.length > 0) {
-          const map = new Map();
-          this.bangboo.forEach(b => {
-            if (!isInvalidCategory(b)) map.set(b.id, b);
-          });
-          cached.bangboo.forEach(b => {
-            if (!isInvalidCategory(b) && !map.has(b.id)) map.set(b.id, b);
-          });
-          this.bangboo = Array.from(map.values());
-        }
-        if (cached.uiSubcategories && cached.uiSubcategories.length > 0) {
-          const map = new Map();
-          this.uiSubcategories.forEach(u => map.set(u.id, u));
-          cached.uiSubcategories.forEach(u => {
-            if (!map.has(u.id)) map.set(u.id, u);
-          });
-          this.uiSubcategories = Array.from(map.values());
-        }
-        if (cached.miscSubcategories && cached.miscSubcategories.length > 0) {
-          const map = new Map();
-          this.miscSubcategories.forEach(m => map.set(m.id, m));
-          cached.miscSubcategories.forEach(m => {
-            if (!map.has(m.id)) map.set(m.id, m);
-          });
-          this.miscSubcategories = Array.from(map.values());
+        if (cached) {
+          if (cached.rootCategories && Array.isArray(cached.rootCategories)) {
+            this.rootCategories = cached.rootCategories;
+          }
+          if (cached.characters && Array.isArray(cached.characters)) {
+            this.characters = cached.characters;
+          }
+          if (cached.bangboo && Array.isArray(cached.bangboo)) {
+            this.bangboo = cached.bangboo;
+          }
+          if (cached.uiSubcategories && Array.isArray(cached.uiSubcategories)) {
+            this.uiSubcategories = cached.uiSubcategories;
+          }
+          if (cached.miscSubcategories && Array.isArray(cached.miscSubcategories)) {
+            this.miscSubcategories = cached.miscSubcategories;
+          }
         }
       }
-      this.saveSubcategoriesCache();
     } catch (e) { }
   }
 
@@ -191,41 +144,56 @@ class SideMenuDownload {
     } catch (e) { }
   }
 
-  init() {
-    this.render();
-    this.fetchRootCategories();
+  static async fetchAndCacheCatalog() {
+    const sm = new SideMenuDownload();
+    return await sm.fetchFullCatalog();
   }
 
-  async fetchRootCategories(retries = 3) {
+  init() {
+    this.render();
+    this.fetchFullCatalog();
+  }
+
+  async fetchFullCatalog(retries = 2) {
+    const fetchJson = (url) => {
+      return new Promise((resolve) => {
+        https.get(url, { headers: { "User-Agent": "WZMM-Client/1.0" } }, (res) => {
+          let data = "";
+          res.on("data", (c) => (data += c));
+          res.on("end", () => {
+            try { resolve(JSON.parse(data)); } catch (e) { resolve(null); }
+          });
+        }).on("error", () => resolve(null));
+      });
+    };
+
     for (let i = 0; i <= retries; i++) {
       try {
-        const res = await new Promise((resolve) => {
-          https.get("https://gamebanana.com/apiv11/Game/19567/ProfilePage", { headers: { "User-Agent": "WZMM-Client/1.0" } }, (response) => {
-            let data = "";
-            response.on("data", c => data += c);
-            response.on("end", () => {
-              try { resolve(JSON.parse(data)); } catch (e) { resolve(null); }
-            });
-          }).on("error", () => resolve(null));
-        });
+        const [profile, chars, boo, ui, misc] = await Promise.all([
+          fetchJson("https://gamebanana.com/apiv11/Game/19567/ProfilePage"),
+          fetchJson("https://gamebanana.com/apiv11/ModCategory/30305/SubCategories"),
+          fetchJson("https://gamebanana.com/apiv11/ModCategory/30702/SubCategories"),
+          fetchJson("https://gamebanana.com/apiv11/ModCategory/30395/SubCategories"),
+          fetchJson("https://gamebanana.com/apiv11/ModCategory/29874/SubCategories"),
+        ]);
 
-        if (res && res._aModRootCategories && Array.isArray(res._aModRootCategories)) {
+        if (profile && profile._aModRootCategories && Array.isArray(profile._aModRootCategories)) {
           const roots = [];
-          for (const cat of res._aModRootCategories) {
+          for (const cat of profile._aModRootCategories) {
             if (cat._idRow === 30395) {
               roots.push({
                 id: 30395,
                 name: "UI",
                 modCount: cat._nItemCount,
                 subcatCount: 0,
-                iconUrl: cat._sIconUrl || "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png"
+                iconUrl: cat._sIconUrl || "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png",
               });
               roots.push({
                 id: 37775,
                 name: "Character UI",
                 modCount: cat._nItemCount,
                 subcatCount: 0,
-                iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png"
+                iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png",
               });
             } else if (cat._idRow === 29874) {
               roots.push({
@@ -233,14 +201,14 @@ class SideMenuDownload {
                 name: "Icons",
                 modCount: 160,
                 subcatCount: 0,
-                iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png"
+                iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png",
               });
               roots.push({
                 id: 29874,
                 name: "Other/Misc",
                 modCount: cat._nItemCount,
                 subcatCount: 0,
-                iconUrl: cat._sIconUrl || "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png"
+                iconUrl: cat._sIconUrl || "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png",
               });
             } else {
               roots.push({
@@ -248,18 +216,51 @@ class SideMenuDownload {
                 name: cat._sName,
                 modCount: cat._nItemCount,
                 subcatCount: cat._nCategoryCount,
-                iconUrl: cat._sIconUrl
+                iconUrl: cat._sIconUrl,
               });
             }
           }
           this.rootCategories = roots;
-          this.saveSubcategoriesCache();
-          this.updateSubcategoriesListUI();
-          break;
         }
+
+        const parseSubcats = (rawList, defaultIcon) => {
+          if (!Array.isArray(rawList)) return [];
+          const list = [];
+          for (const item of rawList) {
+            if (!item || !item._sName) continue;
+            const match = (item._sUrl || "").match(/cats\/(\d+)/);
+            const id = match ? parseInt(match[1]) : (item._idRow || null);
+            if (!id) continue;
+            list.push({
+              id,
+              name: item._sName.trim(),
+              iconUrl: item._sIconUrl || defaultIcon,
+              modCount: item._nItemCount || 0,
+            });
+          }
+          return list.sort((a, b) => a.name.localeCompare(b.name));
+        };
+
+        if (Array.isArray(chars) && chars.length > 0) {
+          this.characters = parseSubcats(chars, "https://images.gamebanana.com/img/ico/ModCategory/66a1928c3e239.gif");
+        }
+        if (Array.isArray(boo) && boo.length > 0) {
+          this.bangboo = parseSubcats(boo, "https://images.gamebanana.com/img/ico/ModCategory/669c13bb037b1.png");
+        }
+        if (Array.isArray(ui) && ui.length > 0) {
+          this.uiSubcategories = parseSubcats(ui, "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png");
+        }
+        if (Array.isArray(misc) && misc.length > 0) {
+          this.miscSubcategories = parseSubcats(misc, "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png");
+        }
+
+        this.saveSubcategoriesCache();
+        this.updateSubcategoriesListUI();
+        return true;
       } catch (e) { }
-      await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
     }
+    return false;
   }
 
   discoverNewSubcategories(modRecords) {

@@ -3113,10 +3113,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   if (!currentSettings.skipSplashScreen && typeof SplashManager !== "undefined") {
-    SplashManager.setProgress(60, t("splash_status_mods"));
+    SplashManager.setProgress(30, t("splash_status_init"));
   }
 
-  loadPage("installed").then(() => {
+  const catalogPromise = SideMenuDownload.fetchAndCacheCatalog()
+    .then(() => {
+      modManager.loadCatalog(true);
+      if (!currentSettings.skipSplashScreen && typeof SplashManager !== "undefined") {
+        SplashManager.setProgress(60, t("splash_status_mods"));
+      }
+    })
+    .catch(() => { });
+
+  Promise.all([catalogPromise, loadPage("installed")]).then(() => {
     updateActiveSidebarIndicator();
     if (typeof SplashManager !== "undefined") {
       SplashManager.setProgress(100, t("splash_status_ready"));

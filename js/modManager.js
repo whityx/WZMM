@@ -161,47 +161,21 @@ class ModManager {
     } catch (e) { }
 
     try {
-      const defaultDataPath = path.join(__dirname, "..", "data", "categories.json");
-      if (fs.existsSync(defaultDataPath)) {
-        const baseData = JSON.parse(fs.readFileSync(defaultDataPath, "utf-8"));
-        this.rootCategories = baseData.rootCategories || [];
-        this.characters = baseData.characters || [];
-        this.bangboo = baseData.bangboo || [];
-      }
-
-      const rootIds = new Set((this.rootCategories || []).map((r) => Number(r.id)));
-      const isInvalidCategory = (c) => {
-        if (!c || !c.name) return true;
-        const id = Number(c.id);
-        const name = c.name.trim().toLowerCase();
-        if (rootIds.has(id)) return true;
-        if (["character ui", "icons", "other/misc", "ui", "other", "misc"].includes(name)) return true;
-        return false;
-      };
-
       if (fs.existsSync(this.subcatsCacheFile)) {
         const cached = JSON.parse(fs.readFileSync(this.subcatsCacheFile, "utf-8"));
-        if (cached.characters && cached.characters.length > 0) {
-          const map = new Map();
-          this.characters.forEach((c) => {
-            if (!isInvalidCategory(c)) map.set(c.id, c);
-          });
-          cached.characters.forEach((c) => {
-            if (!isInvalidCategory(c) && !map.has(c.id)) map.set(c.id, c);
-          });
-          this.characters = Array.from(map.values());
-        }
-        if (cached.bangboo && cached.bangboo.length > 0) {
-          const map = new Map();
-          this.bangboo.forEach((b) => {
-            if (!isInvalidCategory(b)) map.set(b.id, b);
-          });
-          cached.bangboo.forEach((b) => {
-            if (!isInvalidCategory(b) && !map.has(b.id)) map.set(b.id, b);
-          });
-          this.bangboo = Array.from(map.values());
+        if (cached) {
+          if (cached.rootCategories && Array.isArray(cached.rootCategories)) {
+            this.rootCategories = cached.rootCategories;
+          }
+          if (cached.characters && Array.isArray(cached.characters)) {
+            this.characters = cached.characters;
+          }
+          if (cached.bangboo && Array.isArray(cached.bangboo)) {
+            this.bangboo = cached.bangboo;
+          }
         }
       }
+
       this._catalogLoaded = true;
     } catch (e) { }
   }
