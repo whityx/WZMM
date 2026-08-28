@@ -6,6 +6,10 @@
 
 <h1 align="center">WZMM</h1>
 
+<p align="center">
+  <img src="https://count.getloli.com/get/@whityx-WZMM?theme=rule34" alt="Visitors" />
+</p>
+
 ---
 
 Лаунчер Zenless Zone Zero для Linux и Windows, способный скачивать моды с GameBanana и управлять локальными модами.
