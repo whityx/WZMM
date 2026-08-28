@@ -1944,7 +1944,7 @@ document.addEventListener("DOMContentLoaded", () => {
         let records = [];
 
         if (searchVal && selectedCatId) {
-          const isRootCat = [30305, 30702, 30395, 30306].includes(selectedCatId);
+          const isRootCat = (modManager.rootCategories || []).some((rc) => rc.id === selectedCatId);
           if (isRootCat) {
             const url = `https://gamebanana.com/apiv11/Util/Search/Results?_sModelName=Mod&_idGameRow=19567&_sSearchString=${encodeURIComponent(searchVal)}&_nPage=${gbPage}&_nPerpage=50&_csvProperties=${csvProps}`;
             const res = await fetchWithRetry(url, { signal: currentSignal });

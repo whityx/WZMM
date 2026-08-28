@@ -29,13 +29,8 @@ class SideMenuDownload {
     this.rootCategories = [];
     this.characters = [];
     this.bangboo = [];
-    this.uiSubcategories = [
-      { id: 37775, name: "Character UI", iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png" }
-    ];
-    this.miscSubcategories = [
-      { id: 33758, name: "Icons", iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png" },
-      { id: 3993, name: "Other/Misc", iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png" }
-    ];
+    this.uiSubcategories = [];
+    this.miscSubcategories = [];
     this.charactersI18n = {};
 
     this._onKeyDown = (e) => {
@@ -74,13 +69,23 @@ class SideMenuDownload {
         this.rootCategories = baseData.rootCategories || [];
         this.characters = baseData.characters || [];
         this.bangboo = baseData.bangboo || [];
+
+        const uiCat = this.rootCategories.find((r) => r.id === 37775 || r.name === "Character UI");
+        if (uiCat) this.uiSubcategories = [{ id: uiCat.id, name: uiCat.name, iconUrl: uiCat.iconUrl }];
+
+        const iconCat = this.rootCategories.find((r) => r.id === 33758 || r.name === "Icons");
+        const miscCat = this.rootCategories.find((r) => r.id === 29874 || r.id === 3993 || r.name === "Other/Misc");
+        this.miscSubcategories = [];
+        if (iconCat) this.miscSubcategories.push({ id: iconCat.id, name: iconCat.name, iconUrl: iconCat.iconUrl });
+        if (miscCat) this.miscSubcategories.push({ id: miscCat.id, name: miscCat.name, iconUrl: miscCat.iconUrl });
       }
 
+      const rootIds = new Set((this.rootCategories || []).map((r) => Number(r.id)));
       const isInvalidCategory = (c) => {
         if (!c || !c.name) return true;
         const id = Number(c.id);
         const name = c.name.trim().toLowerCase();
-        if ([30305, 30702, 29874, 30395, 37775, 33758, 3993].includes(id)) return true;
+        if (rootIds.has(id)) return true;
         if (["character ui", "icons", "other/misc", "ui", "other", "misc"].includes(name)) return true;
         return false;
       };
@@ -261,12 +266,14 @@ class SideMenuDownload {
     if (!Array.isArray(modRecords)) return;
     let hasNew = false;
 
+    const rootIds = new Set((this.rootCategories || []).map((r) => Number(r.id)));
+
     for (const mod of modRecords) {
       if (mod._aSubCategory && mod._aSubCategory._sProfileUrl && mod._aSubCategory._sName) {
         const match = mod._aSubCategory._sProfileUrl.match(/cats\/(\d+)/);
         if (match) {
           const subId = parseInt(match[1]);
-          if ([30305, 30702, 29874, 30395, 37775, 33758, 3993].includes(subId)) continue;
+          if (rootIds.has(subId)) continue;
           const subName = mod._aSubCategory._sName.trim();
           if (!subName || subName.length < 2) continue;
           if (["character ui", "icons", "other/misc", "ui", "other", "misc"].includes(subName.toLowerCase())) continue;

@@ -130,6 +130,7 @@ class ModManager {
     this.iconsDir = path.join(this.cacheDir, "icons");
     this.subcatsCacheFile = path.join(this.cacheDir, "subcategories.json");
 
+    this.rootCategories = [];
     this.characters = [];
     this.bangboo = [];
     this.charactersI18n = {};
@@ -140,14 +141,6 @@ class ModManager {
     this._dowlinksMtime = 0;
     this._keybindsMemoryCache = new Map();
     this.loadCatalog();
-  }
-
-  static cleanSystemFiles(dirPath) {
-    cleanSystemFiles(dirPath);
-  }
-
-  static flattenDirectory(dirPath) {
-    flattenDirectory(dirPath);
   }
 
   flattenDirectory(dirPath) {
@@ -171,15 +164,17 @@ class ModManager {
       const defaultDataPath = path.join(__dirname, "..", "data", "categories.json");
       if (fs.existsSync(defaultDataPath)) {
         const baseData = JSON.parse(fs.readFileSync(defaultDataPath, "utf-8"));
+        this.rootCategories = baseData.rootCategories || [];
         this.characters = baseData.characters || [];
         this.bangboo = baseData.bangboo || [];
       }
 
+      const rootIds = new Set((this.rootCategories || []).map((r) => Number(r.id)));
       const isInvalidCategory = (c) => {
         if (!c || !c.name) return true;
         const id = Number(c.id);
         const name = c.name.trim().toLowerCase();
-        if ([30305, 30702, 29874, 30395, 37775, 33758, 3993].includes(id)) return true;
+        if (rootIds.has(id)) return true;
         if (["character ui", "icons", "other/misc", "ui", "other", "misc"].includes(name)) return true;
         return false;
       };
@@ -257,40 +252,19 @@ class ModManager {
       });
     });
 
-    list.push({
-      id: 37775,
-      name: "Character UI",
-      localizedName: lang === "ru" ? "Интерфейс персонажей" : "Character UI",
-      category: "UI",
-      iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png",
-      isOther: false,
-    });
+    const serviceCategories = (this.rootCategories || []).filter(
+      (rc) => rc.name !== "Character Skins" && rc.name !== "Bangboo Skins"
+    );
 
-    list.push({
-      id: 33758,
-      name: "Icons",
-      localizedName: lang === "ru" ? "Иконки" : "Icons",
-      category: "Other/Misc",
-      iconUrl: "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png",
-      isOther: false,
-    });
-
-    list.push({
-      id: 29874,
-      name: "Other/Misc",
-      localizedName: lang === "ru" ? "Другое / Разное" : "Other / Misc",
-      category: "Other/Misc",
-      iconUrl: null,
-      isOther: true,
-    });
-
-    list.push({
-      id: 30395,
-      name: "UI",
-      localizedName: "UI / Интерфейс",
-      category: "UI",
-      iconUrl: null,
-      isOther: true,
+    serviceCategories.forEach((cat) => {
+      list.push({
+        id: cat.id,
+        name: cat.name,
+        localizedName: this.getLocalizedCharacterName(cat.name, lang),
+        category: cat.name === "Character UI" || cat.name === "UI" ? "UI" : "Other/Misc",
+        iconUrl: cat.iconUrl ? this.getCharacterIconPath(cat.iconUrl) : null,
+        isOther: cat.name === "Other/Misc" || cat.name === "UI",
+      });
     });
 
     return list;
@@ -437,130 +411,96 @@ class ModManager {
     const fullScanText = textToScan.join(" ").toLowerCase();
 
 
-    const aliasMap = [
-      { names: ["character ui", "char ui", "интерфейс персонажей"], target: "Character UI" },
-      { names: ["icons", "icon", "иконки", "иконка"], target: "Icons" },
-      { names: ["ellen joe", "ellen", "эллен джо", "эллен"], target: "Ellen Joe" },
-      { names: ["jane doe", "jane", "джейн доу", "джейн"], target: "Jane Doe" },
-      { names: ["hoshimi miyabi", "miyabi", "хосими мияби", "мияби"], target: "Hoshimi Miyabi" },
-      { names: ["alexandrina sebastiane", "alexandrina", "rina", "александрина", "рина"], target: "Alexandrina Sebastiane" },
-      { names: ["anby demara", "anby", "энби демара", "энби"], target: "Anby Demara" },
-      { names: ["anton ivanov", "anton", "антон иванов", "антон"], target: "Anton Ivanov" },
-      { names: ["asaba harumasa", "harumasa", "асаба харумаса", "харумаса"], target: "Asaba Harumasa" },
-      { names: ["astra yao", "astra", "астра яо", "астра"], target: "Astra Yao" },
-      { names: ["belle", "белль"], target: "Belle" },
-      { names: ["ben bigger", "ben", "бен биггер", "бен"], target: "Ben Bigger" },
-      { names: ["billy kid", "starlight billy", "billy", "билли кид", "билли"], target: "Billy Kid" },
-      { names: ["burnice white", "burnice", "бёрнис уайт", "бернис уайт", "бёрнис", "бернис"], target: "Burnice White" },
-      { names: ["caesar king", "caesar", "цезарь кинг", "цезарь"], target: "Caesar King" },
-      { names: ["corin wickes", "corin", "корин уикс", "корин"], target: "Corin Wickes" },
-      { names: ["evelyn chevalier", "evelyn", "эвелин шевалье", "эвелин"], target: "Evelyn Chevalier" },
-      { names: ["grace howard", "grace", "грейс ховард", "грейс"], target: "Grace Howard" },
-      { names: ["koleda belobog", "koleda", "коледа белобог", "коледа"], target: "Koleda Belobog" },
-      { names: ["lighter", "лайтер"], target: "Lighter" },
-      { names: ["luciana de montefio", "lucy", "люсиана де монтефио", "люси"], target: "Luciana de Montefio" },
-      { names: ["nekomiya mana", "nekomata", "нэкомия мана", "нэкомия", "некомата"], target: "Nekomiya Mana" },
-      { names: ["nicole demara", "nicole", "николь демара", "николь"], target: "Nicole Demara" },
-      { names: ["piper wheel", "piper", "пайпер уил", "пайпер"], target: "Piper Wheel" },
-      { names: ["qingyi", "цинъи", "цин и"], target: "Qingyi" },
-      { names: ["seth lowell", "seth", "сет лоуэлл", "сет"], target: "Seth Lowell" },
-      { names: ["soldier 11", "soldier0anby", "s11", "солдат 11"], target: "Soldier 11" },
-      { names: ["soukaku", "сокаку"], target: "Soukaku" },
-      { names: ["von lycaon", "lycaon", "фон ликаон", "ликаон"], target: "Von Lycaon" },
-      { names: ["wise", "вайз"], target: "Wise" },
-      { names: ["yanagi tsukishiro", "yanagi", "янаги цукисиро", "янаги"], target: "Yanagi Tsukishiro" },
-      { names: ["zhu yuan", "zhuyuan", "чжу юань", "чжу"], target: "Zhu Yuan" },
-      { names: ["alice thymefield", "alice", "элис таймфилд", "элис"], target: "Alice Thymefield" },
-      { names: ["aria", "ария"], target: "Aria" },
-      { names: ["banyue", "баньюэ"], target: "Banyue" },
-      { names: ["trigger", "гашетка"], target: "Trigger" },
-      { names: ["seed", "сид"], target: "Seed" },
-      { names: ["lucia elowen", "lucia", "люсия эловен", "люсия"], target: "Lucia Elowen" },
-      { names: ["bangboo", "банбу", "sharkboo", "eous", "amillion", "bagboo"], target: "Bangboo" },
+    const candidates = [];
+
+    const serviceCategories = (this.rootCategories || []).filter(
+      (rc) => rc.name !== "Character Skins"
+    );
+
+    for (const rc of serviceCategories) {
+      const names = new Set([rc.name.trim().toLowerCase()]);
+      for (const l of Object.keys(this.charactersI18n || {})) {
+        const loc = this.charactersI18n[l]?.[rc.name];
+        if (loc) names.add(loc.trim().toLowerCase());
+      }
+      if (rc.name === "Character UI") {
+        names.add("char ui");
+      } else if (rc.name === "Icons") {
+        names.add("icon");
+        names.add("иконка");
+      } else if (rc.name === "Bangboo Skins") {
+        names.add("bangboo");
+        names.add("банбу");
+      }
+      candidates.push({
+        target: rc.name === "Bangboo Skins" ? "Bangboo" : rc.name,
+        category: rc.name === "Bangboo Skins" ? "Bangboo Skins" : (rc.name === "Character UI" || rc.name === "UI" ? "UI" : "Other/Misc"),
+        charId: rc.id,
+        iconUrl: rc.iconUrl,
+        names: Array.from(names),
+      });
+    }
+
+    const allEntities = [
+      ...this.characters.map((c) => ({ item: c, isBangboo: false })),
+      ...this.bangboo.map((b) => ({ item: b, isBangboo: true })),
     ];
 
+    for (const { item, isBangboo } of allEntities) {
+      if (!item || !item.name) continue;
+      const names = new Set();
+      const rawName = item.name.trim().toLowerCase();
+      names.add(rawName);
 
-    for (const item of aliasMap) {
-      for (const alias of item.names) {
-        const regex = new RegExp(`(^|[^a-z0-9а-яё])${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9а-яё]|$)`, "i");
-        if (regex.test(fullScanText)) {
-          const matchedName = item.target;
-          const foundChar = this.characters.find((c) => c.name.toLowerCase() === matchedName.toLowerCase()) ||
-            this.bangboo.find((b) => b.name.toLowerCase() === matchedName.toLowerCase());
+      rawName.split(/\s+/).forEach((part) => {
+        if (part.length >= 3) names.add(part);
+      });
 
-          const locName = this.getLocalizedCharacterName(matchedName, lang);
-          const isBangboo = matchedName === "Bangboo" || this.bangboo.some((b) => b.name.toLowerCase() === matchedName.toLowerCase());
-          const isUI = matchedName === "Character UI";
-          const isIcons = matchedName === "Icons";
+      for (const l of Object.keys(this.charactersI18n || {})) {
+        const loc = this.charactersI18n[l]?.[item.name];
+        if (loc) {
+          const locLower = loc.trim().toLowerCase();
+          names.add(locLower);
+          locLower.split(/\s+/).forEach((part) => {
+            if (part.length >= 3) names.add(part);
+          });
+        }
+      }
 
-          let category = "Character Skins";
-          let charId = foundChar ? foundChar.id : null;
-          let iconUrl = foundChar ? this.getCharacterIconPath(foundChar.iconUrl) : null;
+      candidates.push({
+        target: item.name,
+        category: isBangboo ? "Bangboo Skins" : "Character Skins",
+        charId: item.id || null,
+        iconUrl: this.getCharacterIconPath(item.iconUrl),
+        names: Array.from(names),
+      });
+    }
 
-          if (isBangboo) {
-            category = "Bangboo Skins";
-            if (!charId) charId = 30702;
-          } else if (isUI) {
-            category = "UI";
-            charId = 37775;
-            iconUrl = "https://images.gamebanana.com/img/ico/ModCategory/6690641770738.png";
-          } else if (isIcons) {
-            category = "Other/Misc";
-            charId = 33758;
-            iconUrl = "https://images.gamebanana.com/img/ico/ModCategory/6688c2aba07b5.png";
-          }
-
-          const metaResult = {
-            character: matchedName,
-            characterLocalized: locName,
-            characterId: charId,
-            category: category,
-            iconUrl: iconUrl,
-          };
-
-          this.setModMetadata(modName, metaResult, modFolderPaths);
-          return metaResult;
+    const searchEntries = [];
+    for (const candidate of candidates) {
+      for (const name of candidate.names) {
+        if (name && name.length >= 2) {
+          searchEntries.push({ name, candidate });
         }
       }
     }
 
+    searchEntries.sort((a, b) => b.name.length - a.name.length);
 
-    for (const char of this.characters) {
-      const charLower = char.name.toLowerCase();
-      const locCharLower = this.getLocalizedCharacterName(char.name, "ru").toLowerCase();
-      if (
-        fullScanText.includes(charLower) ||
-        (locCharLower && fullScanText.includes(locCharLower))
-      ) {
-        const locName = this.getLocalizedCharacterName(char.name, lang);
+    for (const entry of searchEntries) {
+      const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(`(^|[^a-z0-9а-яё])${escaped}([^a-z0-9а-яё]|$)`, "i");
+      if (regex.test(fullScanText)) {
+        const candidate = entry.candidate;
+        const locName = this.getLocalizedCharacterName(candidate.target, lang);
         const metaResult = {
-          character: char.name,
+          character: candidate.target,
           characterLocalized: locName,
-          characterId: char.id,
-          category: "Character Skins",
-          iconUrl: this.getCharacterIconPath(char.iconUrl),
+          characterId: candidate.charId,
+          category: candidate.category,
+          iconUrl: candidate.iconUrl,
         };
-        this.setModMetadata(modName, metaResult, modFolderPaths);
-        return metaResult;
-      }
-    }
 
-
-    for (const boo of this.bangboo) {
-      const booLower = boo.name.toLowerCase();
-      const locBooLower = this.getLocalizedCharacterName(boo.name, "ru").toLowerCase();
-      if (
-        fullScanText.includes(booLower) ||
-        (locBooLower && fullScanText.includes(locBooLower))
-      ) {
-        const locName = this.getLocalizedCharacterName(boo.name, lang);
-        const metaResult = {
-          character: boo.name,
-          characterLocalized: locName,
-          characterId: boo.id,
-          category: "Bangboo Skins",
-          iconUrl: this.getCharacterIconPath(boo.iconUrl),
-        };
         this.setModMetadata(modName, metaResult, modFolderPaths);
         return metaResult;
       }
