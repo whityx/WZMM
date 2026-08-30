@@ -7,7 +7,7 @@
 <h1 align="center">WZMM</h1>
 
 <p align="center">
-  <img src="https://xmoe.vercel.app/api/card" alt="Visitors" />
+  <img src="https://xmoe.vercel.app/api/card" />
 </p>
 
 ---
