@@ -1,6 +1,6 @@
 {
   "name": "why-zenless-mod-manager",
-  "version": "2.2.0",
+  "version": "0.2.2",
   "description": "ZZZ Mod Manager for windows & linux",
   "main": "main.js",
   "author": "whityx",
@@ -30,14 +30,14 @@
   "build": {
     "appId": "com.whityx.wzmm",
     "productName": "WZMM",
-    "artifactName": "WZMM-2.1.${ext}",
+    "artifactName": "WZMM-0.2.2.${ext}",
     "linux": {
       "target": [
         "AppImage"
       ],
       "category": "Utility",
-      "executableName": "WZMM-2.2",
-      "artifactName": "WZMM-2.2.${ext}"
+      "executableName": "WZMM-0.2.2",
+      "artifactName": "WZMM-0.2.2.${ext}"
     },
     "win": {
       "target": [
@@ -49,10 +49,10 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "WZMM-2.2-Setup.${ext}"
+      "artifactName": "WZMM-0.2.2-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "WZMM-2.2-Portable.${ext}"
+      "artifactName": "WZMM-0.2.2-Portable.${ext}"
     },
     "files": [
       "**/*",
