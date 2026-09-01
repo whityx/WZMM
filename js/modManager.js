@@ -58,6 +58,111 @@ function containsModFiles(folderPath) {
   return false;
 }
 
+function hasDirectIniFile(folderPath) {
+  if (!fs.existsSync(folderPath)) return false;
+  try {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const lower = entry.name.toLowerCase();
+        if (
+          lower.endsWith(".ini") &&
+          !lower.startsWith("d3dx") &&
+          !lower.startsWith("desktop")
+        ) {
+          return true;
+        }
+      }
+    }
+  } catch (e) { }
+  return false;
+}
+
+function containsIniFile(folderPath) {
+  if (!fs.existsSync(folderPath)) return false;
+  try {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const lower = entry.name.toLowerCase();
+        if (
+          lower.endsWith(".ini") &&
+          !lower.startsWith("d3dx") &&
+          !lower.startsWith("desktop")
+        ) {
+          return true;
+        }
+      } else if (
+        entry.isDirectory() &&
+        !entry.name.startsWith(".") &&
+        entry.name !== "__MACOSX" &&
+        !isDocOrMediaDir(entry.name)
+      ) {
+        if (containsIniFile(path.join(folderPath, entry.name))) {
+          return true;
+        }
+      }
+    }
+  } catch (e) { }
+  return false;
+}
+
+function isAssetFolder(dirName) {
+  const lower = dirName.toLowerCase();
+  return [
+    "textures",
+    "texture",
+    "buffers",
+    "buffer",
+    "shaders",
+    "shader",
+  ].includes(lower);
+}
+
+function getDirectSubModFolders(folderPath) {
+  if (!fs.existsSync(folderPath)) return [];
+  try {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    const subDirs = entries.filter(
+      (e) =>
+        e.isDirectory() &&
+        !e.name.startsWith(".") &&
+        e.name !== "__MACOSX" &&
+        !isDocOrMediaDir(e.name) &&
+        !isAssetFolder(e.name)
+    );
+
+    const validSubMods = [];
+    for (const sd of subDirs) {
+      const subPath = path.join(folderPath, sd.name);
+      if (containsIniFile(subPath)) {
+        validSubMods.push(sd.name);
+      }
+    }
+    return validSubMods;
+  } catch (e) {
+    return [];
+  }
+}
+
+function copyRootOnly(srcFolder, destFolder, subModNames = []) {
+  if (fs.existsSync(destFolder)) {
+    fs.rmSync(destFolder, { recursive: true, force: true });
+  }
+  fs.mkdirSync(destFolder, { recursive: true });
+  const entries = fs.readdirSync(srcFolder, { withFileTypes: true });
+  for (const entry of entries) {
+    if (subModNames.includes(entry.name)) continue;
+    const srcPath = path.join(srcFolder, entry.name);
+    const destPath = path.join(destFolder, entry.name);
+    if (entry.isDirectory()) {
+      fs.cpSync(srcPath, destPath, { recursive: true, force: true });
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 function flattenDirectory(dirPath) {
   if (!fs.existsSync(dirPath)) return;
   cleanSystemFiles(dirPath);
@@ -289,6 +394,10 @@ class ModManager {
     const key = (modName || "").trim().toLowerCase();
     if (allMeta[key]) {
       return allMeta[key];
+    }
+    const baseKey = path.basename(modName || "").trim().toLowerCase();
+    if (baseKey && allMeta[baseKey]) {
+      return allMeta[baseKey];
     }
 
     for (const folder of modFolderPaths) {
@@ -562,17 +671,17 @@ class ModManager {
       const items = fs.readdirSync(dirPath, { withFileTypes: true });
 
       items.forEach((item) => {
-        if (item.isDirectory()) {
+        if (item.isDirectory() && !item.name.startsWith(".") && item.name !== "__MACOSX") {
+          if (processedMods.has(item.name)) return;
           totalCount++;
           processedMods.add(item.name);
 
           const modPath = path.join(dirPath, item.name);
           const modvarsModPath = path.join(modvarsDir, item.name);
 
-
+          let variationTree = [];
           let variations = [];
           let activeVariation = null;
-
 
           if (fs.existsSync(modvarsModPath)) {
             try {
@@ -580,9 +689,28 @@ class ModManager {
                 withFileTypes: true,
               });
 
-              variations = varEntries
-                .filter((e) => e.isDirectory())
+              const versionFolders = varEntries
+                .filter((e) => e.isDirectory() && !e.name.startsWith("."))
                 .map((e) => e.name);
+
+              for (const vName of versionFolders) {
+                const vPath = path.join(modvarsModPath, vName);
+                const subFolders = getDirectSubModFolders(vPath);
+                const hasRootIni = hasDirectIniFile(vPath);
+
+                variationTree.push({
+                  name: vName,
+                  subVariations: subFolders,
+                  hasRootMod: hasRootIni || subFolders.length === 0,
+                });
+
+                if (hasRootIni || subFolders.length === 0) {
+                  variations.push(vName);
+                }
+                for (const sf of subFolders) {
+                  variations.push(`${vName}/${sf}`);
+                }
+              }
 
               const activeVarFile = path.join(modvarsModPath, ".active_var");
               if (fs.existsSync(activeVarFile)) {
@@ -592,10 +720,29 @@ class ModManager {
                     .trim();
                 } catch (e) { }
               }
-              if (!activeVariation || !variations.includes(activeVariation)) {
-                activeVariation = variations.length > 0 ? variations[0] : null;
-              }
             } catch (e) { }
+          }
+
+          if (variationTree.length === 0) {
+            const directSubFolders = getDirectSubModFolders(modPath);
+            const hasRootIni = hasDirectIniFile(modPath);
+            if (directSubFolders.length > 0) {
+              variationTree.push({
+                name: item.name,
+                subVariations: directSubFolders,
+                hasRootMod: hasRootIni,
+              });
+              if (hasRootIni) {
+                variations.push(item.name);
+              }
+              for (const sf of directSubFolders) {
+                variations.push(sf);
+              }
+            }
+          }
+
+          if (!activeVariation && variations.length > 0) {
+            activeVariation = variations[0];
           }
 
           let previewUrl = findPreviewUrl(modPath);
@@ -627,6 +774,16 @@ class ModManager {
             }
           }
 
+          if (!previewUrl && variations.length > 0) {
+            for (const v of variations) {
+              const subP = findPreviewUrl(path.join(modPath, v));
+              if (subP) {
+                previewUrl = subP;
+                break;
+              }
+            }
+          }
+
           const safeFolderName = item.name.trim().toLowerCase();
           const folderPaths = [modPath, modvarsModPath];
 
@@ -643,8 +800,9 @@ class ModManager {
             description: descriptionText,
             sourceUrl: dowlinksLower[safeFolderName] || null,
             variations: variations,
+            variationTree: variationTree,
             activeVariation: activeVariation,
-            hasVariations: variations.length > 1,
+            hasVariations: variations.length > 1 || variationTree.length > 1,
             character: charInfo.character,
             characterLocalized: charInfo.characterLocalized,
             characterId: charInfo.characterId,
@@ -666,11 +824,11 @@ class ModManager {
           withFileTypes: true,
         });
         for (const mEntry of modvarsEntries) {
-          if (mEntry.isDirectory() && !processedMods.has(mEntry.name)) {
+          if (mEntry.isDirectory() && !mEntry.name.startsWith(".") && !processedMods.has(mEntry.name)) {
             const modvarsModPath = path.join(modvarsDir, mEntry.name);
             const varEntries = fs
               .readdirSync(modvarsModPath, { withFileTypes: true })
-              .filter((e) => e.isDirectory());
+              .filter((e) => e.isDirectory() && !e.name.startsWith("."));
 
             if (varEntries.length > 0) {
               const firstVar = varEntries[0].name;
@@ -690,6 +848,7 @@ class ModManager {
                 );
 
                 totalCount++;
+                processedMods.add(mEntry.name);
                 const variations = varEntries.map((e) => e.name);
                 const previewUrl =
                   findPreviewUrl(targetDismods) ||
@@ -790,36 +949,93 @@ class ModManager {
     };
   }
 
+  _cleanEmptyParentDirs(rootBaseDir, currentDir) {
+    try {
+      let curr = path.resolve(currentDir);
+      const root = path.resolve(rootBaseDir);
+      while (curr.startsWith(root) && curr !== root) {
+        if (fs.existsSync(curr)) {
+          const files = fs.readdirSync(curr);
+          if (files.length === 0) {
+            fs.rmdirSync(curr);
+            curr = path.dirname(curr);
+          } else {
+            break;
+          }
+        } else {
+          curr = path.dirname(curr);
+        }
+      }
+    } catch (e) { }
+  }
+
   switchModVariation(xxmiPath, modName, targetVariationName) {
     if (!xxmiPath || !modName || !targetVariationName) return false;
-    const modvarsDir = path.join(xxmiPath, "modvars", modName);
-    const srcVarDir = path.join(modvarsDir, targetVariationName);
-    if (!fs.existsSync(srcVarDir)) return false;
-
+    let modvarsDir = path.join(xxmiPath, "modvars", modName);
     const modsDir = path.join(xxmiPath, "Mods", modName);
     const dismodsDir = path.join(xxmiPath, "dismods", modName);
 
     const isActive = fs.existsSync(modsDir);
     const isInactive = fs.existsSync(dismodsDir);
+    const currentFolder = isActive ? modsDir : isInactive ? dismodsDir : modsDir;
 
-    const targetDir = isActive ? modsDir : isInactive ? dismodsDir : modsDir;
+    if (!fs.existsSync(modvarsDir) && fs.existsSync(currentFolder)) {
+      try {
+        const subDirs = getDirectSubModFolders(currentFolder);
+        if (subDirs.length > 0) {
+          const defDir = path.join(modvarsDir, modName);
+          fs.mkdirSync(defDir, { recursive: true });
+          fs.cpSync(currentFolder, defDir, { recursive: true, force: true });
+        }
+      } catch (e) { }
+    }
+
+    const targetDir = currentFolder;
+
+    let srcVarDir = path.join(modvarsDir, targetVariationName);
+    let resolvedIdentifier = targetVariationName;
+
+    if (!fs.existsSync(srcVarDir)) {
+      try {
+        if (fs.existsSync(modvarsDir)) {
+          const verEntries = fs.readdirSync(modvarsDir, { withFileTypes: true });
+          for (const ve of verEntries) {
+            if (ve.isDirectory()) {
+              const candidate = path.join(modvarsDir, ve.name, targetVariationName);
+              if (fs.existsSync(candidate)) {
+                srcVarDir = candidate;
+                resolvedIdentifier = `${ve.name}/${targetVariationName}`;
+                break;
+              }
+            }
+          }
+        }
+      } catch (e) { }
+    }
+
+    if (!fs.existsSync(srcVarDir)) return false;
 
     try {
       if (fs.existsSync(targetDir)) {
         fs.rmSync(targetDir, { recursive: true, force: true });
       }
-      fs.mkdirSync(targetDir, { recursive: true });
-      fs.cpSync(srcVarDir, targetDir, { recursive: true, force: true });
-      flattenDirectory(targetDir);
+
+      const subMods = getDirectSubModFolders(srcVarDir);
+      if (subMods.length > 0) {
+        copyRootOnly(srcVarDir, targetDir, subMods);
+      } else {
+        fs.mkdirSync(targetDir, { recursive: true });
+        fs.cpSync(srcVarDir, targetDir, { recursive: true, force: true });
+        flattenDirectory(targetDir);
+      }
 
       try {
         fs.writeFileSync(
           path.join(modvarsDir, ".active_var"),
-          targetVariationName,
+          resolvedIdentifier,
           "utf-8",
         );
       } catch (e) { }
-
 
       const meta = this.getModMetadata(modName, [modvarsDir]);
       if (meta) {
@@ -833,28 +1049,99 @@ class ModManager {
     }
   }
 
+  getModPreviewAndDescription(xxmiPath, modName, activeVariation) {
+    if (!xxmiPath || !modName) return { previewUrl: null };
+    const modsDir = path.join(xxmiPath, "Mods", modName);
+    const dismodsDir = path.join(xxmiPath, "dismods", modName);
+    const modvarsDir = path.join(xxmiPath, "modvars", modName);
+
+    const modPath = fs.existsSync(modsDir) ? modsDir : dismodsDir;
+
+    const findPreviewUrl = (folderPath) => {
+      if (!fs.existsSync(folderPath)) return null;
+      const previewFiles = ["preview.jpg", "preview.jpeg", "preview.png", "preview.webp"];
+      for (const pName of previewFiles) {
+        const pPath = path.join(folderPath, pName);
+        if (fs.existsSync(pPath)) {
+          return `file://${pPath.replace(/\\/g, "/")}`;
+        }
+      }
+      return null;
+    };
+
+    let previewUrl = findPreviewUrl(modPath);
+    if (!previewUrl && activeVariation && fs.existsSync(path.join(modvarsDir, activeVariation))) {
+      previewUrl = findPreviewUrl(path.join(modvarsDir, activeVariation));
+    }
+    if (!previewUrl && fs.existsSync(modvarsDir)) {
+      previewUrl = findPreviewUrl(modvarsDir);
+    }
+
+    return { previewUrl };
+  }
+
   deleteModVariation(xxmiPath, modName, variationName, currentState) {
     if (!xxmiPath || !modName || !variationName)
       return { success: false, remainingCount: 0 };
-    const modvarsDir = path.join(xxmiPath, "modvars", modName);
-    const varPath = path.join(modvarsDir, variationName);
+    let modvarsDir = path.join(xxmiPath, "modvars", modName);
+    if (!fs.existsSync(modvarsDir)) {
+      const fallback = path.join(xxmiPath, "modvars", path.basename(modName));
+      if (fs.existsSync(fallback)) modvarsDir = fallback;
+    }
+
+    let varPath = path.join(modvarsDir, variationName);
+    if (!fs.existsSync(varPath)) {
+      try {
+        if (fs.existsSync(modvarsDir)) {
+          const verEntries = fs.readdirSync(modvarsDir, { withFileTypes: true });
+          for (const ve of verEntries) {
+            if (ve.isDirectory()) {
+              const candidate = path.join(modvarsDir, ve.name, variationName);
+              if (fs.existsSync(candidate)) {
+                varPath = candidate;
+                break;
+              }
+            }
+          }
+        }
+      } catch (e) { }
+    }
 
     try {
       if (fs.existsSync(varPath)) {
         fs.rmSync(varPath, { recursive: true, force: true });
+        const parentVer = path.dirname(varPath);
+        if (parentVer !== modvarsDir && fs.existsSync(parentVer)) {
+          const remInVer = fs.readdirSync(parentVer).filter((f) => !f.startsWith("."));
+          if (remInVer.length === 0) {
+            fs.rmSync(parentVer, { recursive: true, force: true });
+          }
+        }
       }
 
-      let remaining = [];
+      let remainingCount = 0;
+      let firstRemaining = null;
       if (fs.existsSync(modvarsDir)) {
-        remaining = fs
+        const verEntries = fs
           .readdirSync(modvarsDir, { withFileTypes: true })
-          .filter((e) => e.isDirectory())
-          .map((e) => e.name);
+          .filter((e) => e.isDirectory() && !e.name.startsWith("."));
+        for (const ve of verEntries) {
+          const vP = path.join(modvarsDir, ve.name);
+          const subs = getDirectSubModFolders(vP);
+          if (subs.length > 1) {
+            remainingCount += subs.length;
+            if (!firstRemaining) firstRemaining = `${ve.name}/${subs[0]}`;
+          } else {
+            remainingCount += 1;
+            if (!firstRemaining) firstRemaining = ve.name;
+          }
+        }
       }
 
-      if (remaining.length === 0) {
+      if (remainingCount === 0) {
         if (fs.existsSync(modvarsDir)) {
           fs.rmSync(modvarsDir, { recursive: true, force: true });
+          this._cleanEmptyParentDirs(path.join(xxmiPath, "modvars"), path.dirname(modvarsDir));
         }
         const targetDir = path.join(
           xxmiPath,
@@ -863,6 +1150,7 @@ class ModManager {
         );
         if (fs.existsSync(targetDir)) {
           fs.rmSync(targetDir, { recursive: true, force: true });
+          this._cleanEmptyParentDirs(path.join(xxmiPath, currentState ? "Mods" : "dismods"), path.dirname(targetDir));
         }
         const altDir = path.join(
           xxmiPath,
@@ -871,6 +1159,7 @@ class ModManager {
         );
         if (fs.existsSync(altDir)) {
           fs.rmSync(altDir, { recursive: true, force: true });
+          this._cleanEmptyParentDirs(path.join(xxmiPath, currentState ? "dismods" : "Mods"), path.dirname(altDir));
         }
         return { success: true, remainingCount: 0 };
       } else {
@@ -884,29 +1173,27 @@ class ModManager {
 
         if (
           activeVar === variationName ||
-          !activeVar ||
-          !remaining.includes(activeVar)
+          (activeVar && activeVar.endsWith("/" + variationName)) ||
+          !activeVar
         ) {
-          const newActive = remaining[0];
-          this.switchModVariation(xxmiPath, modName, newActive);
+          if (firstRemaining) {
+            this.switchModVariation(xxmiPath, modName, firstRemaining);
+          }
         }
-        return {
-          success: true,
-          remainingCount: remaining.length,
-          newActiveVar: remaining[0],
-        };
+
+        return { success: true, remainingCount };
       }
     } catch (e) {
       console.error(
         `Ошибка при удалении вариации ${variationName} мода ${modName}:`,
         e,
       );
-      return { success: false, remainingCount: -1 };
+      return { success: false, remainingCount: 0 };
     }
   }
 
   toggleMod(xxmiPath, modName, currentState) {
-    if (!xxmiPath) return false;
+    if (!xxmiPath || !modName) return false;
 
     const sourceDir = currentState
       ? path.join(xxmiPath, "Mods")
@@ -920,7 +1207,12 @@ class ModManager {
 
     try {
       if (fs.existsSync(sourcePath)) {
+        const targetParent = path.dirname(targetPath);
+        if (!fs.existsSync(targetParent)) {
+          fs.mkdirSync(targetParent, { recursive: true });
+        }
         fs.renameSync(sourcePath, targetPath);
+        this._cleanEmptyParentDirs(sourceDir, path.dirname(sourcePath));
         return true;
       }
     } catch (e) {
@@ -930,7 +1222,7 @@ class ModManager {
   }
 
   deleteMod(xxmiPath, modName, currentState) {
-    if (!xxmiPath) return false;
+    if (!xxmiPath || !modName) return false;
 
     const targetDir = path.join(
       xxmiPath,
@@ -942,17 +1234,24 @@ class ModManager {
       currentState ? "dismods" : "Mods",
       modName,
     );
-    const modvarsDir = path.join(xxmiPath, "modvars", modName);
+    let modvarsDir = path.join(xxmiPath, "modvars", modName);
+    if (!fs.existsSync(modvarsDir)) {
+      const fallback = path.join(xxmiPath, "modvars", path.basename(modName));
+      if (fs.existsSync(fallback)) modvarsDir = fallback;
+    }
 
     try {
       if (fs.existsSync(targetDir)) {
         fs.rmSync(targetDir, { recursive: true, force: true });
+        this._cleanEmptyParentDirs(path.join(xxmiPath, currentState ? "Mods" : "dismods"), path.dirname(targetDir));
       }
       if (fs.existsSync(altDir)) {
         fs.rmSync(altDir, { recursive: true, force: true });
+        this._cleanEmptyParentDirs(path.join(xxmiPath, currentState ? "dismods" : "Mods"), path.dirname(altDir));
       }
       if (fs.existsSync(modvarsDir)) {
         fs.rmSync(modvarsDir, { recursive: true, force: true });
+        this._cleanEmptyParentDirs(path.join(xxmiPath, "modvars"), path.dirname(modvarsDir));
       }
       return true;
     } catch (e) {
@@ -1180,7 +1479,11 @@ class ModManager {
     if (!modName || !xxmiPath) return [];
 
     const dirsToScan = [];
-    const modvarsModPath = path.join(xxmiPath, "modvars", modName);
+    let modvarsModPath = path.join(xxmiPath, "modvars", modName);
+    if (!fs.existsSync(modvarsModPath)) {
+      const fallback = path.join(xxmiPath, "modvars", path.basename(modName));
+      if (fs.existsSync(fallback)) modvarsModPath = fallback;
+    }
     const modsPath = path.join(xxmiPath, "Mods", modName);
     const dismodsPath = path.join(xxmiPath, "dismods", modName);
 

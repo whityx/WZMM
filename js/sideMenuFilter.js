@@ -646,6 +646,11 @@ class SideMenuDownload {
     }
 
     if (typeof document !== "undefined") {
+      const mainContent = document.querySelector(".main-content");
+      if (mainContent) {
+        mainContent.classList.toggle("drawer-scroll-lock", this.isOpen);
+      }
+
       const container = document.getElementById(this.containerId);
       if (container) {
         const drawer = container.querySelector("#gb-drawer");
@@ -755,6 +760,7 @@ class InstalledFilterDrawer {
     const t = this.t;
 
     container.innerHTML = `
+      <div class="gb-drawer-backdrop ${this.isOpen ? "open" : ""}" id="installed-drawer-backdrop"></div>
       <aside class="gb-drawer ${this.isOpen ? "open" : ""}" id="installed-drawer">
         <div class="gb-drawer-header">
           <div class="gb-drawer-title-box">
@@ -990,16 +996,18 @@ class InstalledFilterDrawer {
     }
 
     if (typeof document !== "undefined") {
-      const container = document.getElementById(this.containerId);
-      const pageContainer = document.querySelector(".installed-page-container");
-
-      if (pageContainer) {
-        pageContainer.classList.toggle("installed-filter-open", this.isOpen);
+      const mainContent = document.querySelector(".main-content");
+      if (mainContent) {
+        mainContent.classList.toggle("drawer-scroll-lock", this.isOpen);
       }
+
+      const container = document.getElementById(this.containerId);
 
       if (container) {
         const drawer = container.querySelector("#installed-drawer");
+        const backdrop = container.querySelector("#installed-drawer-backdrop");
         if (drawer) drawer.classList.toggle("open", this.isOpen);
+        if (backdrop) backdrop.classList.toggle("open", this.isOpen);
 
         if (this.isOpen) {
           const searchInput = container.querySelector("#installed-drawer-search");

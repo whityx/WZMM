@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="css/modal.css">
     <link rel="stylesheet" href="css/dropdown.css">
     <link rel="stylesheet" href="css/splash.css">
+    <link rel="stylesheet" href="css/tooltip.css">
     <link rel="stylesheet" id="theme-link" href="themes/purple.css">
 </head>
 <body>
@@ -62,6 +63,12 @@
 
     <main class="main-content" id="content-container"></main>
 
+    <button id="global-scroll-top-btn" class="scroll-top-btn" title="Наверх" aria-label="Наверх">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="18 15 12 9 6 15"></polyline>
+        </svg>
+    </button>
+
     <div id="gb-lightbox-modal" class="gb-lightbox-overlay" style="display: none;">
         <span class="gb-lightbox-close" id="gb-lightbox-close" title="Закрыть">&times;</span>
         <img id="gb-lightbox-img" class="gb-lightbox-img" src="" alt="">
@@ -73,6 +80,7 @@
     <script src="js/modalManager.js"></script>
     <script src="js/backgroundManager.js"></script>
     <script src="js/customdropdown.js"></script>
+    <script src="js/tooltipManager.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

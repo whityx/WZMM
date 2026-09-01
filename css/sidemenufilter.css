@@ -9,7 +9,6 @@
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s ease;
-  backdrop-filter: blur(4px);
 }
 
 .gb-drawer-backdrop.open {
@@ -40,23 +39,14 @@
 }
 
 #installed-drawer {
-  z-index: 1000;
-  width: 390px;
+  z-index: 10001;
+  width: 380px;
 }
 
 .gb-drawer.open {
   transform: translateX(0);
   visibility: visible;
   pointer-events: auto;
-}
-
-.installed-page-container {
-  transition: padding-right 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.installed-page-container.installed-filter-open,
-.installed-page-container.group-mode-active {
-  padding-right: 400px;
 }
 
 .gb-drawer-header {
@@ -107,7 +97,6 @@
   background: var(--accent-dim);
   border-color: var(--accent);
   color: var(--text-primary);
-  transform: scale(1.05);
 }
 
 .gb-drawer-body {

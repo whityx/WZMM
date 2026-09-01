@@ -108,6 +108,7 @@
   "gb_sort_likes": "По лайкам",
   "gb_btn_refresh": "Обновить",
   "gb_loading": "Подключение к базе данных...",
+  "gb_loading_more": "Загрузка модов...",
   "gb_modal_link": "Открыть в браузере",
   "gb_modal_files": "Доступные архивы",
   "gb_files_loading": "Получение файлов...",
@@ -147,6 +148,10 @@
   "mod_variations_title": "Вариации мода",
   "mod_var_active": "Активна",
   "mod_var_activate": "Активировать",
+  "mod_var_root": "Основной мод (корень)",
+  "mod_var_base_label": "Основной мод",
+  "mod_has_root_files": "Содержит файлы мода в корне (можно выбрать)",
+  "mod_folder_only": "Папка с вариациями",
   "mod_var_count": "{count} верс.",
   "mod_delete_var_title": "Удаление версий мода",
   "mod_delete_var_desc": "У этого мода есть несколько версий. Выберите, какие версии удалить:",
@@ -191,5 +196,6 @@
   "splash_status_config": "Загрузка конфигурации...",
   "splash_status_mods": "Сканирование модов...",
   "splash_status_ready": "Готово!",
-  "settings_skip_splash": "Пропускать экран загрузки при запуске"
+  "settings_skip_splash": "Пропускать экран загрузки при запуске",
+  "gb_img_link_tooltip": "Нажмите для перехода по ссылке"
 }

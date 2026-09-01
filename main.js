@@ -4,9 +4,14 @@ const fs = require('fs');
 
 const { isLinux } = require('./js/platform');
 
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
 if (isLinux) {
     app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
     app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
+    app.commandLine.appendSwitch('disable-features', 'Vulkan');
     if (app.setDesktopName) {
         app.setDesktopName('why-zenless-mod-manager');
     }

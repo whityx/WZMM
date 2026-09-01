@@ -109,33 +109,19 @@ class GroupManager {
     }
 
     const targetMods = new Set(group.mods);
-    const modsDir = path.join(xxmiPath, "Mods");
-    const dismodsDir = path.join(xxmiPath, "dismods");
-
-    if (!fs.existsSync(modsDir)) fs.mkdirSync(modsDir, { recursive: true });
-    if (!fs.existsSync(dismodsDir)) fs.mkdirSync(dismodsDir, { recursive: true });
-
     let enabledCount = 0;
     let disabledCount = 0;
 
-    if (fs.existsSync(modsDir)) {
-      const activeFolders = fs.readdirSync(modsDir, { withFileTypes: true });
-      for (const item of activeFolders) {
-        if (item.isDirectory() && !targetMods.has(item.name)) {
-          if (modManager.toggleMod(xxmiPath, item.name, true)) {
-            disabledCount++;
-          }
+    const { mods } = modManager.getMods(xxmiPath, "all", "", "all", "en");
+    for (const mod of mods) {
+      const isTarget = targetMods.has(mod.name);
+      if (mod.active && !isTarget) {
+        if (modManager.toggleMod(xxmiPath, mod.name, true)) {
+          disabledCount++;
         }
-      }
-    }
-
-    if (fs.existsSync(dismodsDir)) {
-      const inactiveFolders = fs.readdirSync(dismodsDir, { withFileTypes: true });
-      for (const item of inactiveFolders) {
-        if (item.isDirectory() && targetMods.has(item.name)) {
-          if (modManager.toggleMod(xxmiPath, item.name, false)) {
-            enabledCount++;
-          }
+      } else if (!mod.active && isTarget) {
+        if (modManager.toggleMod(xxmiPath, mod.name, false)) {
+          enabledCount++;
         }
       }
     }

@@ -88,7 +88,10 @@ const applyTranslationsToDOM = (container) => {
   });
   container.querySelectorAll("[data-i18n-title]").forEach(el => {
     const key = el.getAttribute("data-i18n-title");
-    if (translations[key]) el.title = translations[key];
+    if (translations[key]) {
+      el.setAttribute("data-tooltip", translations[key]);
+      el.removeAttribute("title");
+    }
   });
 };
 
@@ -245,6 +248,9 @@ const imageColorCache = new Map();
 let colorExtractionQueue = [];
 let isProcessingColorQueue = false;
 
+let colorSharedCanvas = null;
+let colorSharedCtx = null;
+
 const processColorQueue = () => {
   if (colorExtractionQueue.length === 0) {
     isProcessingColorQueue = false;
@@ -264,14 +270,16 @@ const processColorQueue = () => {
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       try {
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!colorSharedCanvas) {
+          colorSharedCanvas = document.createElement("canvas");
+          colorSharedCanvas.width = 16;
+          colorSharedCanvas.height = 16;
+          colorSharedCtx = colorSharedCanvas.getContext("2d", { willReadFrequently: true });
+        }
         const W = 16;
         const H = 16;
-        canvas.width = W;
-        canvas.height = H;
-        ctx.drawImage(img, 0, 0, W, H);
-        const data = ctx.getImageData(0, 0, W, H).data;
+        colorSharedCtx.drawImage(img, 0, 0, W, H);
+        const data = colorSharedCtx.getImageData(0, 0, W, H).data;
 
         let rSum = 0, gSum = 0, bSum = 0, count = 0;
         for (let y = 8; y < H; y++) {
@@ -344,6 +352,51 @@ const extractDominantColor = (imageUrl) => {
     }
   });
 };
+
+const loadCardMedia = (card) => {
+  if (!card) return;
+  const rawUrl = card.dataset.previewUrl;
+  if (!rawUrl) return;
+
+  const safeUrl = encodeURI(rawUrl).replace(/'/g, "%27").replace(/"/g, "%22");
+  const previewEl = card.querySelector(".mod-preview");
+  if (previewEl) {
+    previewEl.style.backgroundImage = `url('${safeUrl}')`;
+  }
+  card.style.setProperty("--mod-bg-image", `url('${safeUrl}')`);
+  card.classList.add("has-bg-image");
+
+  extractDominantColor(rawUrl).then((color) => {
+    if (color && color.rgb1 && card.isConnected) {
+      card.style.setProperty("--mod-color", color.rgb1);
+      card.style.setProperty("--mod-color-1", color.rgb1);
+      card.style.setProperty("--mod-color-2", color.rgb2 || color.rgb1);
+      card.classList.add("has-dynamic-color");
+    }
+  });
+};
+
+const cardMediaObserver =
+  typeof IntersectionObserver !== "undefined"
+    ? new IntersectionObserver(
+        (entries, observer) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const card = entry.target;
+              observer.unobserve(card);
+              loadCardMedia(card);
+            }
+          });
+        },
+        {
+          rootMargin: "250px 0px",
+          threshold: 0.01,
+        },
+      )
+    : {
+        observe: (card) => loadCardMedia(card),
+        unobserve: () => {},
+      };
 
 const htmlCache = {};
 const cssCache = {};
@@ -540,13 +593,6 @@ document.addEventListener("DOMContentLoaded", () => {
     indicator.style.height = `${itemRect.height}px`;
     indicator.style.left = `${itemRect.left - sidebarRect.left}px`;
     indicator.style.top = `${itemRect.top - sidebarRect.top}px`;
-
-    if (activeItem.animate) {
-      activeItem.animate(
-        [{ transform: "scale(0.92)" }, { transform: "scale(1)" }],
-        { duration: 400, easing: "cubic-bezier(0.34, 1.56, 0.64, 1)" },
-      );
-    }
   };
 
   const updateActiveSidebarIndicator = () => {
@@ -585,12 +631,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const globalScrollTopBtn = document.getElementById("global-scroll-top-btn");
+  const mainContentEl =
+    document.getElementById("content-container") ||
+    document.querySelector(".main-content");
+
+  if (mainContentEl && globalScrollTopBtn) {
+    mainContentEl.addEventListener("scroll", () => {
+      if (mainContentEl.scrollTop > 220) {
+        globalScrollTopBtn.classList.add("visible");
+      } else {
+        globalScrollTopBtn.classList.remove("visible");
+      }
+    });
+
+    globalScrollTopBtn.onclick = () => {
+      mainContentEl.scrollTo({ top: 0, behavior: "smooth" });
+    };
+  }
+
   const loadPage = async (pageName) => {
     isGroupDrawerOpen = false;
     selectedModsForGroup = new Set();
     editingGroupId = null;
     if (installedFilterDrawer) installedFilterDrawer.isOpen = false;
     if (sideMenuDownload) sideMenuDownload.isOpen = false;
+    if (globalScrollTopBtn) globalScrollTopBtn.classList.remove("visible");
+    const mainContent = document.querySelector(".main-content");
+    if (mainContent) mainContent.classList.remove("drawer-scroll-lock");
     try {
       let html = htmlCache[pageName];
       let css = pageCssMap[pageName];
@@ -936,6 +1004,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (drawer) drawer.classList.add("open");
       if (btnManage) btnManage.classList.add("active");
       if (pageContainer) pageContainer.classList.add("group-mode-active");
+      const mainContent = document.querySelector(".main-content");
+      if (mainContent) mainContent.classList.add("drawer-scroll-lock");
       updateGroupSelectionUI();
       renderGroupList();
       renderModsGrid();
@@ -946,6 +1016,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (drawer) drawer.classList.remove("open");
       if (btnManage) btnManage.classList.remove("active");
       if (pageContainer) pageContainer.classList.remove("group-mode-active");
+      const mainContent = document.querySelector(".main-content");
+      if (mainContent) mainContent.classList.remove("drawer-scroll-lock");
       resetGroupEditMode();
     };
 
@@ -1045,6 +1117,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     mods.forEach((mod, index) => {
       const isNsfw = !!mod.nsfw;
+      const modIdentifier = mod.name;
 
       if (isNsfw && currentSettings.nsfwMode === "hide") return;
 
@@ -1054,7 +1127,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const isNsfwBlur = isNsfw && isLocalBlurActive;
 
       const card = document.createElement("div");
-      const isSelected = selectedModsForGroup.has(mod.name);
+      const isSelected = selectedModsForGroup.has(modIdentifier);
       card.className = `mod-card${isSelected ? " selected-for-group" : ""}${isNsfwBlur ? " has-nsfw-blur" : ""}`;
       card.style.setProperty("--card-opacity", mod.active ? "1" : "0.6");
       card.style.animationDelay = `${Math.min(index, 12) * 0.025}s`;
@@ -1062,14 +1135,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const iconActive = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`;
       const iconInactive = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.83 9L15 12.16V12a3 3 0 0 0-3-3h-.17zm-4.3.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`;
       const iconDelete = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
-
-      let bgStyle = "";
-      if (mod.previewUrl) {
-        const safeUrl = encodeURI(mod.previewUrl)
-          .replace(/'/g, "%27")
-          .replace(/"/g, "%22");
-        bgStyle = `background-image: url('${safeUrl}');`;
-      }
 
       const hasMultipleVars = mod.variations && mod.variations.length > 1;
       const varTagHtml = hasMultipleVars
@@ -1089,7 +1154,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const activeVarHtml =
         mod.activeVariation && hasMultipleVars
-          ? `<div class="mod-active-var-name" title="${mod.activeVariation}">[${mod.activeVariation}]</div>`
+          ? `<div class="mod-active-var-name" data-tooltip="${(mod.activeVariation || "").replace(/"/g, "&quot;")}">[${mod.activeVariation}]</div>`
           : "";
 
       card.innerHTML = `
@@ -1097,10 +1162,10 @@ document.addEventListener("DOMContentLoaded", () => {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
         </div>
         <div class="mod-preview-wrapper">
-          <div class="mod-preview ${isNsfwBlur ? "nsfw-blur" : ""}" style="${bgStyle} cursor: pointer;">
+          <div class="mod-preview ${isNsfwBlur ? "nsfw-blur" : ""}" style="cursor: pointer;">
             ${varTagHtml}
             ${charBadgeHtml}
-            ${mod.previewUrl ? "" : `<div class="mod-placeholder">${t('mod_no_photo')}</div>`}
+            ${mod.previewUrl ? "" : `<div class="mod-placeholder"><div class="mod-placeholder-logo"></div></div>`}
           </div>
         </div>
         <div class="mod-footer">
@@ -1108,7 +1173,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${mod.active ? iconActive : iconInactive}
           </button>
           <div class="mod-name-container">
-            <div class="mod-name" title="${mod.name}">${mod.name}</div>
+            <div class="mod-name" data-tooltip="${(mod.name || "").replace(/"/g, "&quot;")}">${mod.name}</div>
             ${activeVarHtml}
           </div>
           <button class="mod-delete-btn" title="${t('mod_delete_forever')}">
@@ -1118,20 +1183,8 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
 
       if (mod.previewUrl) {
-        const safeUrl = encodeURI(mod.previewUrl)
-          .replace(/'/g, "%27")
-          .replace(/"/g, "%22");
-        card.style.setProperty("--mod-bg-image", `url('${safeUrl}')`);
-        card.classList.add("has-bg-image");
-
-        extractDominantColor(mod.previewUrl).then((color) => {
-          if (color && color.rgb1) {
-            card.style.setProperty("--mod-color", color.rgb1);
-            card.style.setProperty("--mod-color-1", color.rgb1);
-            card.style.setProperty("--mod-color-2", color.rgb2 || color.rgb1);
-            card.classList.add("has-dynamic-color");
-          }
-        });
+        card.dataset.previewUrl = mod.previewUrl;
+        cardMediaObserver.observe(card);
       }
 
       const charBadgeEl = card.querySelector(".mod-char-badge");
@@ -1149,11 +1202,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const toggleSelection = (e) => {
         if (e) e.stopPropagation();
-        if (selectedModsForGroup.has(mod.name)) {
-          selectedModsForGroup.delete(mod.name);
+        if (selectedModsForGroup.has(modIdentifier)) {
+          selectedModsForGroup.delete(modIdentifier);
           card.classList.remove("selected-for-group");
         } else {
-          selectedModsForGroup.add(mod.name);
+          selectedModsForGroup.add(modIdentifier);
           card.classList.add("selected-for-group");
         }
         updateGroupSelectionUI();
@@ -1180,7 +1233,7 @@ document.addEventListener("DOMContentLoaded", () => {
         e.stopPropagation();
         const success = modManager.toggleMod(
           currentSettings.xxmiPath,
-          mod.name,
+          modIdentifier,
           mod.active,
         );
         if (success) {
@@ -1214,11 +1267,11 @@ document.addEventListener("DOMContentLoaded", () => {
             () => {
               const deleted = modManager.deleteMod(
                 currentSettings.xxmiPath,
-                mod.name,
+                modIdentifier,
                 mod.active,
               );
               if (deleted) {
-                selectedModsForGroup.delete(mod.name);
+                selectedModsForGroup.delete(modIdentifier);
                 updateGroupSelectionUI();
                 renderModsGrid();
               } else {
@@ -1239,6 +1292,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const openModModal = (mod) => {
     const modal = document.getElementById("mod-modal");
     if (!modal) return;
+    const modIdentifier = mod.name;
     document.getElementById("modal-title").textContent = mod.name;
     document.getElementById("modal-status").textContent = mod.active
       ? t('mod_status_on')
@@ -1308,7 +1362,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const rawId = itemEl.dataset.id ? parseInt(itemEl.dataset.id) : null;
           const rawCat = decodeURIComponent(itemEl.dataset.cat);
 
-          modManager.setModMetadata(mod.name, {
+          modManager.setModMetadata(modIdentifier, {
             character: rawName,
             characterId: rawId,
             category: rawCat
@@ -1355,7 +1409,7 @@ document.addEventListener("DOMContentLoaded", () => {
       nsfwCheckbox.onchange = () => {
         const isChecked = nsfwCheckbox.checked;
         mod.nsfw = isChecked;
-        modManager.setModMetadata(mod.name, { nsfw: isChecked }, mod.paths);
+        modManager.setModMetadata(modIdentifier, { nsfw: isChecked }, mod.paths);
         updateModalMedia();
         renderModsGrid();
       };
@@ -1418,22 +1472,40 @@ document.addEventListener("DOMContentLoaded", () => {
     const varsCount = document.getElementById("modal-variations-count");
 
     const renderModalVars = () => {
-      if (varsBox && varsList && mod.variations && mod.variations.length > 0) {
+      const hasTree = mod.variationTree && mod.variationTree.length > 0;
+      const hasFlat = mod.variations && mod.variations.length > 0;
+
+      if (varsBox && varsList && (hasTree || hasFlat)) {
         varsBox.style.display = "block";
-        if (varsCount) varsCount.textContent = mod.variations.length;
+        const tree = hasTree ? mod.variationTree : [{ name: mod.name, subVariations: mod.variations }];
+        let totalCount = 0;
+        tree.forEach(v => {
+          totalCount += (v.subVariations && v.subVariations.length > 0) ? v.subVariations.length : 1;
+        });
+        if (varsCount) varsCount.textContent = totalCount;
         varsList.innerHTML = "";
 
-        mod.variations.forEach((varName) => {
-          const isActiveVar = varName === mod.activeVariation;
+        const createVarItem = (displayName, fullIdentifier, isSubItem = false) => {
+          const isActiveVar = mod.activeVariation === fullIdentifier ||
+            mod.activeVariation === displayName ||
+            (mod.activeVariation && mod.activeVariation.endsWith("/" + displayName));
+
+          const renderedName = displayName === "Default (Root)" ? t('mod_var_root') : displayName;
+
           const item = document.createElement("div");
-          item.className = `var-item${isActiveVar ? " var-item-active" : ""}`;
+          item.className = `var-item ${isSubItem ? "var-subitem" : "var-version-item"}${isActiveVar ? " var-item-active" : ""}`;
           item.innerHTML = `
             <div class="var-info">
-              <span class="var-name" title="${varName}">${varName}</span>
+              <div class="var-folder-icon ${isSubItem ? "subvar-icon" : ""}">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+              </div>
+              <span class="var-name" title="${renderedName}">${renderedName}</span>
               ${isActiveVar ? `<span class="var-active-badge">${t('mod_var_active')}</span>` : ""}
             </div>
             <div class="var-actions">
-              <button class="btn-var-delete" data-var="${varName}" title="${t('confirm_delete')}">
+              <button class="btn-var-delete" data-var="${fullIdentifier}" title="${t('confirm_delete')}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"/></svg>
               </button>
             </div>
@@ -1441,32 +1513,42 @@ document.addEventListener("DOMContentLoaded", () => {
 
           item.addEventListener("click", (e) => {
             if (e.target.closest(".btn-var-delete")) return;
-            if (mod.activeVariation === varName) return;
+            if (mod.activeVariation === fullIdentifier) return;
 
             const success = modManager.switchModVariation(
               currentSettings.xxmiPath,
-              mod.name,
-              varName,
+              modIdentifier,
+              fullIdentifier,
             );
             if (success) {
-              mod.activeVariation = varName;
-              const { mods } = modManager.getMods(
-                currentSettings.xxmiPath,
-                "all",
-                "",
-              );
-              const updatedMod = mods.find((m) => m.name === mod.name);
-              if (updatedMod) {
-                mod.previewUrl = updatedMod.previewUrl;
-                mod.description = updatedMod.description;
-                mod.variations = updatedMod.variations;
-                mod.activeVariation = updatedMod.activeVariation;
+              mod.activeVariation = fullIdentifier;
+              if (modManager.getModPreviewAndDescription) {
+                const info = modManager.getModPreviewAndDescription(
+                  currentSettings.xxmiPath,
+                  modIdentifier,
+                  fullIdentifier,
+                );
+                if (info && info.previewUrl) {
+                  mod.previewUrl = info.previewUrl;
+                }
               }
               updateModalMedia();
               renderModalVars();
               renderModalKeybinds();
-              renderModsGrid();
-              showGroupToast(t('mod_var_switched', { varName: varName }));
+
+              const allCards = document.querySelectorAll(".mod-card");
+              for (const cardEl of allCards) {
+                const titleEl = cardEl.querySelector(".mod-title");
+                if (titleEl && titleEl.textContent.trim() === mod.name) {
+                  const previewEl = cardEl.querySelector(".mod-preview");
+                  if (previewEl && mod.previewUrl) {
+                    previewEl.style.backgroundImage = `url("${encodeURI(mod.previewUrl).replace(/'/g, "%27").replace(/"/g, "%22")}")`;
+                  }
+                  break;
+                }
+              }
+
+              showGroupToast(t('mod_var_switched', { varName: renderedName }));
             }
           });
 
@@ -1476,20 +1558,20 @@ document.addEventListener("DOMContentLoaded", () => {
               e.stopPropagation();
               customConfirm(
                 t('mod_delete_single_var_confirm', {
-                  varName: varName,
+                  varName: displayName,
                   modName: mod.name,
                 }),
                 () => {
                   const res = modManager.deleteModVariation(
                     currentSettings.xxmiPath,
-                    mod.name,
-                    varName,
+                    modIdentifier,
+                    fullIdentifier,
                     mod.active,
                   );
                   if (res.success) {
                     if (res.remainingCount === 0) {
                       modal.style.display = "none";
-                      selectedModsForGroup.delete(mod.name);
+                      selectedModsForGroup.delete(modIdentifier);
                       updateGroupSelectionUI();
                       renderModsGrid();
                     } else {
@@ -1498,11 +1580,12 @@ document.addEventListener("DOMContentLoaded", () => {
                         "all",
                         "",
                       );
-                      const updatedMod = mods.find((m) => m.name === mod.name);
+                      const updatedMod = mods.find((m) => (m.relPath || m.name) === modIdentifier);
                       if (updatedMod) {
                         mod.previewUrl = updatedMod.previewUrl;
                         mod.description = updatedMod.description;
                         mod.variations = updatedMod.variations;
+                        mod.variationTree = updatedMod.variationTree;
                         mod.activeVariation = updatedMod.activeVariation;
                       }
                       updateModalMedia();
@@ -1519,7 +1602,154 @@ document.addEventListener("DOMContentLoaded", () => {
             });
           }
 
-          varsList.appendChild(item);
+          return item;
+        };
+
+        tree.forEach((ver) => {
+          const hasSubVars = ver.subVariations && ver.subVariations.length > 0;
+          if (!hasSubVars) {
+            varsList.appendChild(createVarItem(ver.name, ver.name, false));
+          } else {
+            const groupEl = document.createElement("div");
+            groupEl.className = "var-version-group";
+
+            const isHeaderActive = mod.activeVariation === ver.name;
+            const canSelectRoot = !!ver.hasRootMod;
+
+            const headerEl = document.createElement("div");
+            headerEl.className = `var-item var-version-header${canSelectRoot ? " var-has-root" : " var-folder-only"}${isHeaderActive ? " var-item-active" : ""}`;
+            headerEl.innerHTML = `
+              <div class="var-info">
+                <div class="var-chevron-icon" title="Свернуть / Развернуть">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </div>
+                <div class="var-folder-icon main-version-folder">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </div>
+                <span class="var-name var-version-title" title="${ver.name}">${ver.name}</span>
+                ${canSelectRoot ? `<span class="var-root-tag" title="${t('mod_has_root_files')}">${t('mod_var_base_label')}</span>` : `<span class="var-folder-tag" title="${t('mod_folder_only')}">${t('mod_folder_only')}</span>`}
+                ${isHeaderActive ? `<span class="var-active-badge">${t('mod_var_active')}</span>` : ""}
+                <span class="var-version-badge">${ver.subVariations.length}</span>
+              </div>
+              <div class="var-actions">
+                <button class="btn-var-delete" data-var="${ver.name}" title="${t('confirm_delete')}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"/></svg>
+                </button>
+              </div>
+            `;
+            groupEl.appendChild(headerEl);
+
+            const subListEl = document.createElement("div");
+            subListEl.className = "var-subversion-list";
+
+            headerEl.addEventListener("click", (e) => {
+              if (e.target.closest(".btn-var-delete")) return;
+              if (e.target.closest(".var-chevron-icon") || !canSelectRoot) {
+                const isCollapsed = subListEl.classList.toggle("collapsed");
+                headerEl.classList.toggle("is-collapsed", isCollapsed);
+                return;
+              }
+              if (mod.activeVariation === ver.name) return;
+
+              const success = modManager.switchModVariation(
+                currentSettings.xxmiPath,
+                modIdentifier,
+                ver.name,
+              );
+              if (success) {
+                mod.activeVariation = ver.name;
+                if (modManager.getModPreviewAndDescription) {
+                  const info = modManager.getModPreviewAndDescription(
+                    currentSettings.xxmiPath,
+                    modIdentifier,
+                    ver.name,
+                  );
+                  if (info && info.previewUrl) {
+                    mod.previewUrl = info.previewUrl;
+                  }
+                }
+                updateModalMedia();
+                renderModalVars();
+                renderModalKeybinds();
+
+                const allCards = document.querySelectorAll(".mod-card");
+                for (const cardEl of allCards) {
+                  const titleEl = cardEl.querySelector(".mod-title");
+                  if (titleEl && titleEl.textContent.trim() === mod.name) {
+                    const previewEl = cardEl.querySelector(".mod-preview");
+                    if (previewEl && mod.previewUrl) {
+                      previewEl.style.backgroundImage = `url("${encodeURI(mod.previewUrl).replace(/'/g, "%27").replace(/"/g, "%22")}")`;
+                    }
+                    break;
+                  }
+                }
+
+                showGroupToast(t('mod_var_switched', { varName: ver.name }));
+              }
+            });
+
+            const delBtn = headerEl.querySelector(".btn-var-delete");
+            if (delBtn) {
+              delBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                customConfirm(
+                  t('mod_delete_single_var_confirm', {
+                    varName: ver.name,
+                    modName: mod.name,
+                  }),
+                  () => {
+                    const res = modManager.deleteModVariation(
+                      currentSettings.xxmiPath,
+                      modIdentifier,
+                      ver.name,
+                      mod.active,
+                    );
+                    if (res.success) {
+                      if (res.remainingCount === 0) {
+                        modal.style.display = "none";
+                        selectedModsForGroup.delete(modIdentifier);
+                        updateGroupSelectionUI();
+                        renderModsGrid();
+                      } else {
+                        const { mods } = modManager.getMods(
+                          currentSettings.xxmiPath,
+                          "all",
+                          "",
+                        );
+                        const updatedMod = mods.find((m) => (m.relPath || m.name) === modIdentifier);
+                        if (updatedMod) {
+                          mod.previewUrl = updatedMod.previewUrl;
+                          mod.description = updatedMod.description;
+                          mod.variations = updatedMod.variations;
+                          mod.variationTree = updatedMod.variationTree;
+                          mod.activeVariation = updatedMod.activeVariation;
+                        }
+                        updateModalMedia();
+                        renderModalVars();
+                        renderModalKeybinds();
+                        renderModsGrid();
+                      }
+                    } else {
+                      if (window.Toast) window.Toast.error(t('mod_delete_err'));
+                      else alert(t('mod_delete_err'));
+                    }
+                  },
+                );
+              });
+            }
+
+            ver.subVariations.forEach((subName) => {
+              const fullVarId = `${ver.name}/${subName}`;
+              subListEl.appendChild(createVarItem(subName, fullVarId, true));
+            });
+
+            groupEl.appendChild(subListEl);
+            varsList.appendChild(groupEl);
+          }
         });
       } else if (varsBox) {
         varsBox.style.display = "none";
@@ -1533,7 +1763,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const renderModalKeybinds = () => {
       if (!keybindsList) return;
       const binds = modManager.getModKeybinds(
-        mod.name,
+        modIdentifier,
         mod.activeVariation,
         currentSettings.xxmiPath,
       );
@@ -1674,6 +1904,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.target === modal) closeModal();
     };
 
+    const modIdentifier = mod.name;
+
     if (delSelectedBtn) {
       delSelectedBtn.onclick = () => {
         if (selectedVars.size === 0) return;
@@ -1681,11 +1913,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (selectedVars.size === mod.variations.length) {
           const deleted = modManager.deleteMod(
             currentSettings.xxmiPath,
-            mod.name,
+            modIdentifier,
             mod.active,
           );
           if (deleted) {
-            selectedModsForGroup.delete(mod.name);
+            selectedModsForGroup.delete(modIdentifier);
             updateGroupSelectionUI();
             renderModsGrid();
             closeModal();
@@ -1698,7 +1930,7 @@ document.addEventListener("DOMContentLoaded", () => {
           for (const v of selectedVars) {
             modManager.deleteModVariation(
               currentSettings.xxmiPath,
-              mod.name,
+              modIdentifier,
               v,
               mod.active,
             );
@@ -1717,11 +1949,11 @@ document.addEventListener("DOMContentLoaded", () => {
           () => {
             const deleted = modManager.deleteMod(
               currentSettings.xxmiPath,
-              mod.name,
+              modIdentifier,
               mod.active,
             );
             if (deleted) {
-              selectedModsForGroup.delete(mod.name);
+              selectedModsForGroup.delete(modIdentifier);
               updateGroupSelectionUI();
               renderModsGrid();
               closeModal();
@@ -1914,7 +2146,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       gbLoading = true;
       const loadingEl = document.getElementById("gb-loading");
+      const bottomLoadingEl = document.getElementById("gb-bottom-loading");
       if (loadingEl && !append) loadingEl.style.display = "flex";
+      if (bottomLoadingEl && append) bottomLoadingEl.style.display = "flex";
 
       const currentGrid = document.getElementById("gb-grid");
       if (!append) {
@@ -1971,13 +2205,7 @@ document.addEventListener("DOMContentLoaded", () => {
               { signal: currentSignal }
             );
 
-            const [r1, r2, r3, rSearch] = await Promise.all([
-              p1.then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
-              p2.then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
-              p3.then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
-              pSearch.then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
-            ]);
-
+            const [r1, r2, r3, rSearch] = await Promise.all([p1, p2, p3, pSearch].map((p) => p.then((res) => (res.ok ? res.json() : null)).catch(() => null)));
             if (currentSignal.aborted) return;
 
             const seen = new Set();
@@ -2032,6 +2260,7 @@ document.addEventListener("DOMContentLoaded", () => {
       } finally {
         gbLoading = false;
         if (loadingEl) loadingEl.style.display = "none";
+        if (bottomLoadingEl) bottomLoadingEl.style.display = "none";
       }
     };
 
@@ -2051,17 +2280,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     };
 
-    const scrollTopBtn = document.getElementById("gb-scroll-top-btn");
     const handleScroll = (target) => {
       if (!target) return;
-      if (scrollTopBtn) {
-        if (target.scrollTop > 220) {
-          scrollTopBtn.style.display = "flex";
-          scrollTopBtn.classList.add("visible");
-        } else {
-          scrollTopBtn.classList.remove("visible");
-        }
-      }
       checkScroll(target);
     };
 
@@ -2070,13 +2290,6 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("content-container") ||
       document.querySelector(".main-content");
     if (mainContent) mainContent.onscroll = (e) => handleScroll(e.target);
-
-    if (scrollTopBtn) {
-      scrollTopBtn.onclick = () => {
-        if (mainContent) mainContent.scrollTo({ top: 0, behavior: "smooth" });
-        if (grid) grid.scrollTo({ top: 0, behavior: "smooth" });
-      };
-    }
 
     if (refreshBtn) refreshBtn.onclick = () => fetchGBMods(false);
     if (sortSelect) {
@@ -2245,7 +2458,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       card.innerHTML = `
                 <div class="mod-preview-wrapper">
-                    <div class="mod-preview ${imgClass}" style="${imgUrl ? `background-image: url('${imgUrl}');` : ""} cursor: pointer;">
+                    <div class="mod-preview ${imgClass}" style="cursor: pointer;">
                         ${imgUrl ? "" : '<div class="mod-placeholder">GB</div>'}
                     </div>
                     ${nsfwBadgeHtml}
@@ -2255,7 +2468,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         ${btnIcon}
                     </button>
                     <div class="mod-name-container">
-                        <div class="mod-name" title="${mod._sName}">${mod._sName}</div>
+                        <div class="mod-name" data-tooltip="${(mod._sName || "").replace(/"/g, "&quot;")}">${mod._sName}</div>
                         <div class="mod-stats">
                             <span title="${t('gb_likes')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg> ${likes}</span>
                             <span id="dl-count-${mod._idRow}" title="${t('gb_downloads')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg> ...</span>
@@ -2266,20 +2479,8 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
 
       if (imgUrl) {
-        const safeImg = encodeURI(imgUrl)
-          .replace(/'/g, "%27")
-          .replace(/"/g, "%22");
-        card.style.setProperty("--mod-bg-image", `url('${safeImg}')`);
-        card.classList.add("has-bg-image");
-
-        extractDominantColor(imgUrl).then((color) => {
-          if (color && color.rgb1) {
-            card.style.setProperty("--mod-color", color.rgb1);
-            card.style.setProperty("--mod-color-1", color.rgb1);
-            card.style.setProperty("--mod-color-2", color.rgb2 || color.rgb1);
-            card.classList.add("has-dynamic-color");
-          }
-        });
+        card.dataset.previewUrl = imgUrl;
+        cardMediaObserver.observe(card);
       }
 
       card.querySelector(".mod-preview-wrapper").onclick = () =>
@@ -2437,7 +2638,8 @@ document.addEventListener("DOMContentLoaded", () => {
           dImg.onerror = () => {
             dImg.onerror = null;
             dImg.src = "icons/cat.jpg";
-            dImg.title = "";
+            dImg.removeAttribute("title");
+            dImg.removeAttribute("data-tooltip");
             dImg.style.cursor = "default";
             dImg.onclick = null;
           };
@@ -2445,21 +2647,40 @@ document.addEventListener("DOMContentLoaded", () => {
             if (dImg.naturalWidth > 0) {
               if (dImg.src.includes("icons/cat.jpg")) {
                 dImg.style.cursor = "default";
-                dImg.title = "";
+                dImg.removeAttribute("title");
+                dImg.removeAttribute("data-tooltip");
                 dImg.onclick = null;
               } else {
                 dImg.style.cursor = "pointer";
-                dImg.title = t('gb_modal_img_zoom') || "Нажмите для увеличения";
-                dImg.onclick = (e) => {
-                  e.stopPropagation();
-                  if (dImg.src) openLightbox(dImg.src);
-                };
+                const parentLink = dImg.closest("a");
+                const href = parentLink ? (parentLink.getAttribute("href") || parentLink.href || "") : "";
+                const isExternalLink = href.startsWith("http://") || href.startsWith("https://");
+
+                if (isExternalLink) {
+                  dImg.removeAttribute("title");
+                  dImg.setAttribute("data-tooltip", t("gb_img_link_tooltip") || "Нажмите для перехода по ссылке");
+                  dImg.setAttribute("data-tooltip-delay", "500");
+                  dImg.setAttribute("data-tooltip-link", "true");
+                  dImg.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    shell.openExternal(parentLink.href || href);
+                  };
+                } else {
+                  dImg.removeAttribute("title");
+                  dImg.removeAttribute("data-tooltip");
+                  dImg.onclick = (e) => {
+                    e.stopPropagation();
+                    if (dImg.src) openLightbox(dImg.src);
+                  };
+                }
               }
             } else {
               dImg.onerror = null;
               dImg.src = "icons/cat.jpg";
               dImg.style.cursor = "default";
-              dImg.title = "";
+              dImg.removeAttribute("title");
+              dImg.removeAttribute("data-tooltip");
               dImg.onclick = null;
             }
           };

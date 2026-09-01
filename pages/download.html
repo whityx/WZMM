@@ -50,11 +50,10 @@
 
     <div id="gb-grid" class="mods-grid"></div>
 
-    <button id="gb-scroll-top-btn" class="gb-scroll-top-btn" title="Наверх" aria-label="Наверх">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="18 15 12 9 6 15"></polyline>
-        </svg>
-    </button>
+    <div id="gb-bottom-loading" class="gb-bottom-loading" style="display: none;">
+        <div class="gb-bottom-spinner"></div>
+        <span class="gb-bottom-loading-text" data-i18n-text="gb_loading_more">Загрузка модов...</span>
+    </div>
 
     <div id="gb-drawer-container"></div>
 
@@ -70,7 +69,7 @@
                     <div class="carousel-container" id="gb-carousel-container">
                         <button class="carousel-btn prev-btn" id="gb-carousel-prev">&lt;</button>
                         <div class="carousel-image-wrapper">
-                            <img id="gb-modal-img" src="" alt="" style="display: none;" title="Нажмите для открытия в полный размер">
+                            <img id="gb-modal-img" src="" alt="" style="display: none;">
                         </div>
                         <button class="carousel-btn next-btn" id="gb-carousel-next">&gt;</button>
                     </div>

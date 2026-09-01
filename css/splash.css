@@ -134,23 +134,24 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-  color: var(--text-muted, #71717a);
-  padding: 6px 18px;
+  background: var(--accent);
+  border: none;
+  color: var(--text-on-accent, #ffffff);
+  padding: 8px 22px;
   border-radius: var(--radius-pill, 9999px);
-  font-size: 0.78rem;
-  font-weight: 500;
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-fast, 0.15s ease);
+  box-shadow: 0 4px 14px var(--accent-dim, rgba(0, 0, 0, 0.3));
+  transition: background-color var(--transition-fast, 0.15s ease), box-shadow var(--transition-fast, 0.15s ease), transform var(--transition-fast, 0.15s ease);
 }
 
 .splash-skip-btn:hover {
-  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.05));
-  border-color: var(--border-hover, rgba(255, 255, 255, 0.15));
-  color: var(--text-primary, #ffffff);
+  background: var(--accent-hover);
+  box-shadow: 0 6px 18px var(--accent-dim, rgba(0, 0, 0, 0.4));
+  color: var(--text-on-accent, #ffffff);
 }
 
 .splash-skip-btn:active {
-  transform: scale(0.97);
+  transform: translateY(1px);
 }

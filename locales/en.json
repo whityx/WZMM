@@ -108,6 +108,7 @@
   "gb_sort_likes": "Most liked",
   "gb_btn_refresh": "Refresh",
   "gb_loading": "Connecting to database...",
+  "gb_loading_more": "Loading more mods...",
   "gb_modal_link": "Open in browser",
   "gb_modal_files": "Available archives",
   "gb_files_loading": "Fetching files...",
@@ -147,6 +148,10 @@
   "mod_variations_title": "Mod Variations",
   "mod_var_active": "Active",
   "mod_var_activate": "Activate",
+  "mod_var_root": "Main Mod (Root files)",
+  "mod_var_base_label": "Main Mod",
+  "mod_has_root_files": "Contains root mod files (selectable)",
+  "mod_folder_only": "Folder with variations",
   "mod_var_count": "{count} vars",
   "mod_delete_var_title": "Delete Mod Variations",
   "mod_delete_var_desc": "This mod has multiple versions. Select which versions to delete:",
@@ -191,5 +196,6 @@
   "splash_status_config": "Loading configuration...",
   "splash_status_mods": "Scanning mods...",
   "splash_status_ready": "Ready!",
-  "settings_skip_splash": "Skip splash screen on startup"
+  "settings_skip_splash": "Skip splash screen on startup",
+  "gb_img_link_tooltip": "Click to open link in browser"
 }
