@@ -10,6 +10,20 @@
   width: 100%;
 }
 
+.custom-dropdown.open {
+  z-index: 1000;
+}
+
+.custom-dropdown.drop-up .custom-dropdown-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform: translateY(8px) scale(0.98);
+}
+
+.custom-dropdown.open.drop-up .custom-dropdown-menu {
+  transform: translateY(0) scale(1);
+}
+
 .custom-dropdown-trigger {
   display: flex;
   align-items: center;

@@ -195,12 +195,27 @@ class CustomDropdown {
       if (el !== this.wrapper) el.classList.remove("open");
     });
     this.isOpen = true;
-    if (this.wrapper) this.wrapper.classList.add("open");
+    if (this.wrapper) {
+      this.wrapper.classList.add("open");
+      if (this.menu) {
+        const rect = this.wrapper.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const menuHeight = this.menu.offsetHeight || 220;
+        if (spaceBelow < menuHeight + 10 && rect.top > menuHeight + 10) {
+          this.wrapper.classList.add("drop-up");
+        } else {
+          this.wrapper.classList.remove("drop-up");
+        }
+      }
+    }
   }
 
   close() {
     this.isOpen = false;
-    if (this.wrapper) this.wrapper.classList.remove("open");
+    if (this.wrapper) {
+      this.wrapper.classList.remove("open");
+      this.wrapper.classList.remove("drop-up");
+    }
   }
 
   destroy() {
