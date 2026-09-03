@@ -5,6 +5,7 @@ const SplashManager = {
   percentText: null,
   skipBtn: null,
   isDismissed: false,
+  isLocked: false,
   onSkipCallback: null,
   _keydownHandler: null,
 
@@ -32,7 +33,15 @@ const SplashManager = {
     window.addEventListener("keydown", this._keydownHandler);
   },
 
+  lock() {
+    this.isLocked = true;
+    if (this.skipBtn) {
+      this.skipBtn.style.display = "none";
+    }
+  },
+
   triggerSkip() {
+    if (this.isLocked) return;
     this.hide();
     if (typeof this.onSkipCallback === "function") {
       this.onSkipCallback();

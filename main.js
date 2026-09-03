@@ -71,6 +71,10 @@ app.on('window-all-closed', () => {
     app.quit();
 });
 
+ipcMain.on('get-app-version', (event) => {
+    event.returnValue = app.getVersion();
+});
+
 ipcMain.on('minimize-to-tray', () => {
     if (mainWindow) {
         mainWindow.hide();

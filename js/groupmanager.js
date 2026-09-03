@@ -99,6 +99,64 @@ class GroupManager {
     return !!this.saveGroup(group);
   }
 
+  enableGroup(xxmiPath, id, modManager) {
+    if (!xxmiPath || !fs.existsSync(xxmiPath)) {
+      return { success: false, reason: "invalid_path" };
+    }
+    const group = this.getGroup(id);
+    if (!group) {
+      return { success: false, reason: "not_found" };
+    }
+
+    const targetMods = new Set(group.mods);
+    let enabledCount = 0;
+
+    const { mods } = modManager.getMods(xxmiPath, "all", "", "all", "en");
+    for (const mod of mods) {
+      if (targetMods.has(mod.name) && !mod.active) {
+        if (modManager.toggleMod(xxmiPath, mod.name, false)) {
+          enabledCount++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      groupName: group.name,
+      enabledCount,
+      totalCount: group.mods.length
+    };
+  }
+
+  disableGroup(xxmiPath, id, modManager) {
+    if (!xxmiPath || !fs.existsSync(xxmiPath)) {
+      return { success: false, reason: "invalid_path" };
+    }
+    const group = this.getGroup(id);
+    if (!group) {
+      return { success: false, reason: "not_found" };
+    }
+
+    const targetMods = new Set(group.mods);
+    let disabledCount = 0;
+
+    const { mods } = modManager.getMods(xxmiPath, "all", "", "all", "en");
+    for (const mod of mods) {
+      if (targetMods.has(mod.name) && mod.active) {
+        if (modManager.toggleMod(xxmiPath, mod.name, true)) {
+          disabledCount++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      groupName: group.name,
+      disabledCount,
+      totalCount: group.mods.length
+    };
+  }
+
   applyGroup(xxmiPath, id, modManager) {
     if (!xxmiPath || !fs.existsSync(xxmiPath)) {
       return { success: false, reason: "invalid_path" };

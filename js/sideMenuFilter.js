@@ -39,6 +39,16 @@ class SideMenuDownload {
       }
     };
 
+    this._onOutsideClick = (e) => {
+      if (!this.isOpen) return;
+      const container = document.getElementById(this.containerId);
+      const drawer = container ? container.querySelector("#gb-drawer") : null;
+      const filterBtn = document.getElementById("gb-filter-btn");
+      if (drawer && !drawer.contains(e.target) && (!filterBtn || !filterBtn.contains(e.target))) {
+        this.toggle(false);
+      }
+    };
+
     this.loadCharactersI18n();
     this.loadInitialCatalog();
   }
@@ -499,6 +509,7 @@ class SideMenuDownload {
     if (allBtn) {
       allBtn.addEventListener("click", () => {
         this.setCategory(null, null);
+        this.toggle(false);
       });
     }
 
@@ -506,6 +517,7 @@ class SideMenuDownload {
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         this.setCategory(null, null);
+        this.toggle(false);
       });
     }
 
@@ -574,6 +586,10 @@ class SideMenuDownload {
 
         if (node && node.classList.contains("has-sub")) {
           node.classList.add("expanded");
+        } else {
+          this.setCategory(catId, locName);
+          this.toggle(false);
+          return;
         }
 
         this.setCategory(catId, locName);
@@ -586,6 +602,7 @@ class SideMenuDownload {
         const subId = parseInt(row.dataset.id);
         const locName = row.dataset.localizedName || row.dataset.name;
         this.setCategory(subId, locName);
+        this.toggle(false);
       });
     });
   }
@@ -640,17 +657,16 @@ class SideMenuDownload {
     if (typeof window !== "undefined") {
       if (this.isOpen) {
         window.addEventListener("keydown", this._onKeyDown);
+        setTimeout(() => {
+          document.addEventListener("click", this._onOutsideClick);
+        }, 10);
       } else {
         window.removeEventListener("keydown", this._onKeyDown);
+        document.removeEventListener("click", this._onOutsideClick);
       }
     }
 
     if (typeof document !== "undefined") {
-      const mainContent = document.querySelector(".main-content");
-      if (mainContent) {
-        mainContent.classList.toggle("drawer-scroll-lock", this.isOpen);
-      }
-
       const container = document.getElementById(this.containerId);
       if (container) {
         const drawer = container.querySelector("#gb-drawer");
@@ -702,6 +718,16 @@ class InstalledFilterDrawer {
 
     this._onKeyDown = (e) => {
       if (e.key === "Escape" && this.isOpen) {
+        this.toggle(false);
+      }
+    };
+
+    this._onOutsideClick = (e) => {
+      if (!this.isOpen) return;
+      const container = document.getElementById(this.containerId);
+      const drawer = container ? container.querySelector("#installed-drawer") : null;
+      const filterBtn = document.getElementById("installed-filter-btn");
+      if (drawer && !drawer.contains(e.target) && (!filterBtn || !filterBtn.contains(e.target))) {
         this.toggle(false);
       }
     };
@@ -990,17 +1016,16 @@ class InstalledFilterDrawer {
     if (typeof window !== "undefined") {
       if (this.isOpen) {
         window.addEventListener("keydown", this._onKeyDown);
+        setTimeout(() => {
+          document.addEventListener("click", this._onOutsideClick);
+        }, 10);
       } else {
         window.removeEventListener("keydown", this._onKeyDown);
+        document.removeEventListener("click", this._onOutsideClick);
       }
     }
 
     if (typeof document !== "undefined") {
-      const mainContent = document.querySelector(".main-content");
-      if (mainContent) {
-        mainContent.classList.toggle("drawer-scroll-lock", this.isOpen);
-      }
-
       const container = document.getElementById(this.containerId);
 
       if (container) {

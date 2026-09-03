@@ -1,20 +1,5 @@
 .gb-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
-  background: var(--bg-modal-overlay, rgba(0, 0, 0, 0.65));
-  z-index: 10000;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.25s ease;
-}
-
-.gb-drawer-backdrop.open {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
+  display: none !important;
 }
 
 .gb-drawer {
@@ -100,13 +85,15 @@
 }
 
 .gb-drawer-body {
-  padding: 18px 20px;
+  padding: 18px 20px 40px 20px;
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
+  overscroll-behavior: contain;
 }
 
 .gb-drawer-body::-webkit-scrollbar {
@@ -484,7 +471,6 @@
   background: var(--accent-dim);
   color: var(--accent-hover, var(--text-primary));
   border: 1px solid var(--accent-dim);
-  box-shadow: 0 0 12px var(--accent-dim);
   border-radius: 16px;
   padding: 4px 12px;
   font-size: 0.84rem;

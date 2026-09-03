@@ -78,6 +78,101 @@ function hasDirectIniFile(folderPath) {
   return false;
 }
 
+function hasDirectModFiles(folderPath) {
+  if (!fs.existsSync(folderPath)) return false;
+  try {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile()) {
+        const lower = entry.name.toLowerCase();
+        if (
+          lower.startsWith(".") ||
+          lower.startsWith("desktop") ||
+          lower.startsWith("d3dx") ||
+          lower === "readme.txt"
+        ) {
+          continue;
+        }
+        const ext = path.extname(lower);
+        if ([".ini", ".buf", ".dds", ".ib", ".vb", ".hlsl"].includes(ext)) {
+          return true;
+        }
+      }
+    }
+  } catch (e) { }
+  return false;
+}
+
+function containsAnyModFile(dirPath) {
+  if (!fs.existsSync(dirPath)) return false;
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const lower = entry.name.toLowerCase();
+      if (
+        lower.startsWith(".") ||
+        lower.startsWith("desktop") ||
+        lower.startsWith("d3dx") ||
+        lower === "readme.txt" ||
+        lower.startsWith("preview") ||
+        lower.startsWith("thumb")
+      ) {
+        continue;
+      }
+      if (entry.isFile()) {
+        const ext = path.extname(lower);
+        if ([".ini", ".buf", ".dds", ".ib", ".vb", ".hlsl", ".tga"].includes(ext)) {
+          return true;
+        }
+      } else if (entry.isDirectory()) {
+        if (entry.name !== "__MACOSX" && !isDocOrMediaDir(entry.name)) {
+          if (containsAnyModFile(path.join(dirPath, entry.name))) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch (e) { }
+  return false;
+}
+
+function hasRootModContent(folderPath, subFolders = []) {
+  if (!fs.existsSync(folderPath)) return false;
+  try {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (subFolders.includes(entry.name)) continue;
+      const lower = entry.name.toLowerCase();
+      if (
+        lower.startsWith(".") ||
+        lower.startsWith("desktop") ||
+        lower.startsWith("d3dx") ||
+        lower === "readme.txt" ||
+        lower === "modmeta.json" ||
+        lower.endsWith(".json") ||
+        lower.startsWith("preview") ||
+        lower.startsWith("thumb") ||
+        lower.startsWith("cover")
+      ) {
+        continue;
+      }
+      if (entry.isFile()) {
+        const ext = path.extname(lower);
+        if ([".ini", ".buf", ".dds", ".ib", ".vb", ".hlsl", ".tga", ".png", ".jpg", ".jpeg"].includes(ext)) {
+          return true;
+        }
+      } else if (entry.isDirectory()) {
+        if (entry.name !== "__MACOSX" && !isDocOrMediaDir(entry.name)) {
+          if (containsAnyModFile(path.join(folderPath, entry.name))) {
+            return true;
+          }
+        }
+      }
+    }
+  } catch (e) { }
+  return false;
+}
+
 function containsIniFile(folderPath) {
   if (!fs.existsSync(folderPath)) return false;
   try {
@@ -116,6 +211,11 @@ function isAssetFolder(dirName) {
     "buffer",
     "shaders",
     "shader",
+    "meshes",
+    "mesh",
+    "uiresources",
+    "uiresource",
+    "ui",
   ].includes(lower);
 }
 
@@ -161,6 +261,35 @@ function copyRootOnly(srcFolder, destFolder, subModNames = []) {
       fs.copyFileSync(srcPath, destPath);
     }
   }
+}
+
+function parseActiveVar(rawContent) {
+  if (!rawContent) return { version: null, subVariations: [], includeRoot: true };
+  try {
+    const parsed = JSON.parse(rawContent);
+    if (parsed && typeof parsed === "object") {
+      return {
+        version: parsed.version || null,
+        subVariations: Array.isArray(parsed.subVariations) ? parsed.subVariations : [],
+        includeRoot: typeof parsed.includeRoot === "boolean" ? parsed.includeRoot : true,
+      };
+    }
+  } catch (e) { }
+
+  const trimmed = String(rawContent).trim();
+  if (trimmed.includes("/")) {
+    const parts = trimmed.split("/");
+    return {
+      version: parts[0],
+      subVariations: [parts.slice(1).join("/")],
+      includeRoot: true,
+    };
+  }
+  return {
+    version: trimmed,
+    subVariations: [trimmed],
+    includeRoot: true,
+  };
 }
 
 function flattenDirectory(dirPath) {
@@ -682,6 +811,8 @@ class ModManager {
           let variationTree = [];
           let variations = [];
           let activeVariation = null;
+          let activeSubVariations = [];
+          let activeIncludeRoot = true;
 
           if (fs.existsSync(modvarsModPath)) {
             try {
@@ -696,15 +827,17 @@ class ModManager {
               for (const vName of versionFolders) {
                 const vPath = path.join(modvarsModPath, vName);
                 const subFolders = getDirectSubModFolders(vPath);
-                const hasRootIni = hasDirectIniFile(vPath);
+                const hasRootContent =
+                  hasRootModContent(vPath, subFolders) ||
+                  hasRootModContent(modvarsModPath, versionFolders);
 
                 variationTree.push({
                   name: vName,
                   subVariations: subFolders,
-                  hasRootMod: hasRootIni || subFolders.length === 0,
+                  hasRootMod: hasRootContent || subFolders.length === 0,
                 });
 
-                if (hasRootIni || subFolders.length === 0) {
+                if (hasRootContent || subFolders.length === 0) {
                   variations.push(vName);
                 }
                 for (const sf of subFolders) {
@@ -715,9 +848,10 @@ class ModManager {
               const activeVarFile = path.join(modvarsModPath, ".active_var");
               if (fs.existsSync(activeVarFile)) {
                 try {
-                  activeVariation = fs
-                    .readFileSync(activeVarFile, "utf-8")
-                    .trim();
+                  const info = parseActiveVar(fs.readFileSync(activeVarFile, "utf-8"));
+                  activeVariation = info.version;
+                  activeSubVariations = info.subVariations;
+                  activeIncludeRoot = info.includeRoot;
                 } catch (e) { }
               }
             } catch (e) { }
@@ -725,14 +859,14 @@ class ModManager {
 
           if (variationTree.length === 0) {
             const directSubFolders = getDirectSubModFolders(modPath);
-            const hasRootIni = hasDirectIniFile(modPath);
+            const hasRootContent = hasRootModContent(modPath, directSubFolders);
             if (directSubFolders.length > 0) {
               variationTree.push({
                 name: item.name,
                 subVariations: directSubFolders,
-                hasRootMod: hasRootIni,
+                hasRootMod: hasRootContent,
               });
-              if (hasRootIni) {
+              if (hasRootContent) {
                 variations.push(item.name);
               }
               for (const sf of directSubFolders) {
@@ -741,8 +875,14 @@ class ModManager {
             }
           }
 
-          if (!activeVariation && variations.length > 0) {
-            activeVariation = variations[0];
+          if (!activeVariation && variationTree.length > 0) {
+            activeVariation = variationTree[0].name;
+            activeSubVariations = variationTree[0].subVariations.length > 0 ? [variationTree[0].subVariations[0]] : [];
+          } else if (activeVariation && activeSubVariations.length === 0 && variationTree.length > 0) {
+            const currentVerObj = variationTree.find(v => v.name === activeVariation);
+            if (currentVerObj && currentVerObj.subVariations.length > 0) {
+              activeSubVariations = [currentVerObj.subVariations[0]];
+            }
           }
 
           let previewUrl = findPreviewUrl(modPath);
@@ -802,6 +942,8 @@ class ModManager {
             variations: variations,
             variationTree: variationTree,
             activeVariation: activeVariation,
+            activeSubVariations: activeSubVariations,
+            activeIncludeRoot: activeIncludeRoot,
             hasVariations: variations.length > 1 || variationTree.length > 1,
             character: charInfo.character,
             characterLocalized: charInfo.characterLocalized,
@@ -969,7 +1111,7 @@ class ModManager {
     } catch (e) { }
   }
 
-  switchModVariation(xxmiPath, modName, targetVariationName) {
+  switchModVariation(xxmiPath, modName, targetVariationName, selectedSubVariations = null, includeRoot = true) {
     if (!xxmiPath || !modName || !targetVariationName) return false;
     let modvarsDir = path.join(xxmiPath, "modvars", modName);
     const modsDir = path.join(xxmiPath, "Mods", modName);
@@ -992,47 +1134,140 @@ class ModManager {
 
     const targetDir = currentFolder;
 
-    let srcVarDir = path.join(modvarsDir, targetVariationName);
-    let resolvedIdentifier = targetVariationName;
+    let versionName = targetVariationName;
+    let srcVersionDir = path.join(modvarsDir, targetVariationName);
+    let resolvedSubs = Array.isArray(selectedSubVariations) ? [...selectedSubVariations] : null;
 
-    if (!fs.existsSync(srcVarDir)) {
-      try {
-        if (fs.existsSync(modvarsDir)) {
-          const verEntries = fs.readdirSync(modvarsDir, { withFileTypes: true });
-          for (const ve of verEntries) {
-            if (ve.isDirectory()) {
-              const candidate = path.join(modvarsDir, ve.name, targetVariationName);
-              if (fs.existsSync(candidate)) {
-                srcVarDir = candidate;
-                resolvedIdentifier = `${ve.name}/${targetVariationName}`;
-                break;
+    if (targetVariationName.includes("/")) {
+      const parts = targetVariationName.split("/");
+      versionName = parts[0];
+      srcVersionDir = path.join(modvarsDir, versionName);
+      if (resolvedSubs === null) {
+        resolvedSubs = [parts.slice(1).join("/")];
+      }
+    } else if (!fs.existsSync(srcVersionDir)) {
+      if (fs.existsSync(modvarsDir)) {
+        const verEntries = fs.readdirSync(modvarsDir, { withFileTypes: true });
+        for (const ve of verEntries) {
+          if (ve.isDirectory()) {
+            const candidate = path.join(modvarsDir, ve.name, targetVariationName);
+            if (fs.existsSync(candidate)) {
+              srcVersionDir = path.join(modvarsDir, ve.name);
+              versionName = ve.name;
+              if (resolvedSubs === null) {
+                resolvedSubs = [targetVariationName];
               }
+              break;
             }
           }
         }
-      } catch (e) { }
+      }
     }
 
-    if (!fs.existsSync(srcVarDir)) return false;
+    if (!fs.existsSync(srcVersionDir)) {
+      const altSrc = path.join(modvarsDir, modName);
+      if (fs.existsSync(altSrc)) {
+        srcVersionDir = altSrc;
+        versionName = modName;
+      } else {
+        return false;
+      }
+    }
 
     try {
       if (fs.existsSync(targetDir)) {
         fs.rmSync(targetDir, { recursive: true, force: true });
       }
+      fs.mkdirSync(targetDir, { recursive: true });
 
-      const subMods = getDirectSubModFolders(srcVarDir);
-      if (subMods.length > 0) {
-        copyRootOnly(srcVarDir, targetDir, subMods);
+      if (selectedSubVariations === null && targetVariationName.includes("/")) {
+        const directSubPath = path.join(modvarsDir, targetVariationName);
+        if (fs.existsSync(directSubPath)) {
+          fs.cpSync(directSubPath, targetDir, { recursive: true, force: true });
+          flattenDirectory(targetDir);
+
+          const activeData = {
+            version: versionName,
+            subVariations: [targetVariationName.split("/").slice(1).join("/")],
+            includeRoot: false,
+          };
+
+          try {
+            fs.writeFileSync(
+              path.join(modvarsDir, ".active_var"),
+              JSON.stringify(activeData, null, 2),
+              "utf-8",
+            );
+          } catch (e) { }
+
+          const meta = this.getModMetadata(modName, [modvarsDir]);
+          if (meta) {
+            this.setModMetadata(modName, meta, [targetDir, modvarsDir]);
+          }
+
+          return true;
+        }
+      }
+
+      const availableSubFolders = getDirectSubModFolders(srcVersionDir);
+
+      let shouldIncludeRoot = includeRoot;
+      if (Array.isArray(resolvedSubs)) {
+        if (resolvedSubs.includes("__root__")) {
+          shouldIncludeRoot = true;
+          resolvedSubs = resolvedSubs.filter((s) => s !== "__root__");
+        }
+      }
+
+      let activeSubs = [];
+      if (availableSubFolders.length > 0) {
+        if (resolvedSubs !== null) {
+          activeSubs = resolvedSubs.filter((s) => availableSubFolders.includes(s));
+        } else if (availableSubFolders.includes(targetVariationName)) {
+          activeSubs = [targetVariationName];
+        }
+
+        if (shouldIncludeRoot) {
+          copyRootOnly(srcVersionDir, targetDir, availableSubFolders);
+          if (fs.existsSync(modvarsDir) && modvarsDir !== srcVersionDir) {
+            try {
+              const modvarEntries = fs.readdirSync(modvarsDir, { withFileTypes: true });
+              for (const mve of modvarEntries) {
+                if (mve.isFile()) {
+                  const lower = mve.name.toLowerCase();
+                  if (lower === ".active_var" || lower === "modmeta.json" || lower.startsWith("preview") || lower.startsWith("thumb")) continue;
+                  const sP = path.join(modvarsDir, mve.name);
+                  const dP = path.join(targetDir, mve.name);
+                  if (!fs.existsSync(dP)) {
+                    fs.copyFileSync(sP, dP);
+                  }
+                }
+              }
+            } catch (e) { }
+          }
+        }
+        for (const subName of activeSubs) {
+          const subSrc = path.join(srcVersionDir, subName);
+          const subDst = path.join(targetDir, subName);
+          if (fs.existsSync(subSrc)) {
+            fs.cpSync(subSrc, subDst, { recursive: true, force: true });
+          }
+        }
       } else {
-        fs.mkdirSync(targetDir, { recursive: true });
-        fs.cpSync(srcVarDir, targetDir, { recursive: true, force: true });
+        fs.cpSync(srcVersionDir, targetDir, { recursive: true, force: true });
         flattenDirectory(targetDir);
       }
+
+      const activeData = {
+        version: versionName,
+        subVariations: activeSubs,
+        includeRoot: shouldIncludeRoot,
+      };
 
       try {
         fs.writeFileSync(
           path.join(modvarsDir, ".active_var"),
-          resolvedIdentifier,
+          JSON.stringify(activeData, null, 2),
           "utf-8",
         );
       } catch (e) { }
@@ -1080,7 +1315,7 @@ class ModManager {
     return { previewUrl };
   }
 
-  deleteModVariation(xxmiPath, modName, variationName, currentState) {
+  deleteModVariation(xxmiPath, modName, variationName, currentState = true) {
     if (!xxmiPath || !modName || !variationName)
       return { success: false, remainingCount: 0 };
     let modvarsDir = path.join(xxmiPath, "modvars", modName);
@@ -1163,22 +1398,22 @@ class ModManager {
         }
         return { success: true, remainingCount: 0 };
       } else {
-        let activeVar = null;
+        let activeInfo = { version: null, subVariations: [] };
         const activeVarFile = path.join(modvarsDir, ".active_var");
         if (fs.existsSync(activeVarFile)) {
           try {
-            activeVar = fs.readFileSync(activeVarFile, "utf-8").trim();
+            activeInfo = parseActiveVar(fs.readFileSync(activeVarFile, "utf-8"));
           } catch (e) { }
         }
 
-        if (
-          activeVar === variationName ||
-          (activeVar && activeVar.endsWith("/" + variationName)) ||
-          !activeVar
-        ) {
-          if (firstRemaining) {
-            this.switchModVariation(xxmiPath, modName, firstRemaining);
-          }
+        const isDeletedActive =
+          activeInfo.version === variationName ||
+          activeInfo.subVariations.includes(variationName) ||
+          (activeInfo.version && activeInfo.subVariations.some((s) => `${activeInfo.version}/${s}` === variationName)) ||
+          !activeInfo.version;
+
+        if (isDeletedActive && firstRemaining) {
+          this.switchModVariation(xxmiPath, modName, firstRemaining);
         }
 
         return { success: true, remainingCount };

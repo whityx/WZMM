@@ -1,73 +1,206 @@
-<div class="page-header">
-    <h2 data-i18n-text="settings_title">Настройки приложения</h2>
-</div>
+<link rel="stylesheet" href="css/settings.css">
 
-<div class="input-group">
-    <div class="input-label" data-i18n-text="settings_xxmi_path">Путь к ZZMI</div>
-    <div class="input-row">
-        <input type="text" id="setting-xxmi-path" class="text-input" placeholder="">
-        <button id="btn-select-xxmi" class="btn-secondary" data-i18n-text="settings_browse">Обзор</button>
+<div class="settings-page">
+    <div class="page-header">
+        <h2 data-i18n-text="settings_title">Настройки</h2>
     </div>
-</div>
 
-<div class="divider"></div>
+    <div class="settings-layout">
+        <nav class="settings-nav">
+            <div class="settings-active-indicator" id="settings-indicator"></div>
+            <button type="button" class="settings-nav-item active" data-settings-tab="general">
+                <span class="settings-nav-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                </span>
+                <span class="settings-nav-label" data-i18n-text="settings_tab_general">Основные</span>
+            </button>
 
-<div class="input-group">
-    <div class="input-label" data-i18n-text="settings_bin_path">Путь к bin</div>
-    <div class="input-row">
-        <input type="text" id="setting-xxmi-bin-path" class="text-input" placeholder="">
-        <button id="btn-select-xxmi-bin" class="btn-secondary" data-i18n-text="settings_browse">Обзор</button>
+            <button type="button" class="settings-nav-item" data-settings-tab="paths">
+                <span class="settings-nav-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </span>
+                <span class="settings-nav-label" data-i18n-text="settings_tab_paths">Пути</span>
+            </button>
+
+            <button type="button" class="settings-nav-item" data-settings-tab="appearance">
+                <span class="settings-nav-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"></circle>
+                        <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"></circle>
+                        <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"></circle>
+                        <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"></circle>
+                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
+                    </svg>
+                </span>
+                <span class="settings-nav-label" data-i18n-text="settings_tab_appearance">Внешний вид</span>
+            </button>
+
+            <button type="button" class="settings-nav-item" data-settings-tab="about">
+                <span class="settings-nav-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                </span>
+                <span class="settings-nav-label" data-i18n-text="settings_tab_about">О программе</span>
+            </button>
+        </nav>
+
+        <section class="settings-content">
+            <div class="settings-tab-panel active" id="settings-tab-general">
+                <div class="settings-card">
+                    <div class="settings-card-body">
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title" data-i18n-text="settings_lang">Язык | Language</div>
+                                <div class="settings-row-desc" data-i18n-text="settings_lang_desc">Выберите предпочитаемый язык интерфейса</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <div class="select-wrapper">
+                                    <select id="language-selector" class="mods-filter-select">
+                                        <option value="ru">Русский</option>
+                                        <option value="en">English</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-divider"></div>
+
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title" data-i18n-text="settings_nsfw">Фильтр контента (18+)</div>
+                                <div class="settings-row-desc" data-i18n-text="settings_nsfw_desc">Управление отображением контента 18+</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <div class="select-wrapper">
+                                    <select id="setting-nsfw-mode" class="mods-filter-select">
+                                        <option value="show" data-i18n-text="settings_nsfw_show">Показывать всё</option>
+                                        <option value="blur" data-i18n-text="settings_nsfw_blur">Размывать везде</option>
+                                        <option value="blur_local_only" data-i18n-text="settings_nsfw_blur_local_only">Размывать только локальные моды</option>
+                                        <option value="blur_download_only" data-i18n-text="settings_nsfw_blur_download_only">Размывать только из вкладки скачать</option>
+                                        <option value="hide" data-i18n-text="settings_nsfw_hide">Скрывать полностью</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-divider"></div>
+
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title" data-i18n-text="settings_skip_splash">Пропускать экран загрузки при запуске</div>
+                                <div class="settings-row-desc" data-i18n-text="settings_skip_splash_desc">Быстрый запуск без отображения заставки</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="setting-skip-splash">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-tab-panel" id="settings-tab-paths">
+                <div class="input-group">
+                    <div class="input-label" data-i18n-text="settings_xxmi_path">Путь к ZZMI</div>
+                    <div class="input-row">
+                        <input type="text" id="setting-xxmi-path" class="text-input" placeholder="">
+                        <button id="btn-select-xxmi" class="btn-secondary" data-i18n-text="settings_browse">Обзор</button>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="input-group">
+                    <div class="input-label" data-i18n-text="settings_bin_path">Путь к bin</div>
+                    <div class="input-row">
+                        <input type="text" id="setting-xxmi-bin-path" class="text-input" placeholder="">
+                        <button id="btn-select-xxmi-bin" class="btn-secondary" data-i18n-text="settings_browse">Обзор</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-tab-panel" id="settings-tab-appearance">
+                <div class="settings-card">
+                    <div class="settings-card-body">
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title" data-i18n-text="settings_theme">Тема оформления</div>
+                                <div class="settings-row-desc" data-i18n-text="settings_theme_desc">Выберите цветовую схему оформления лаунчера</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <div class="select-wrapper">
+                                    <select id="setting-theme" class="mods-filter-select">
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-divider"></div>
+
+                        <div class="settings-themes-grid" id="settings-themes-palette">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-tab-panel" id="settings-tab-about">
+                <div class="settings-card">
+                    <div class="settings-card-body">
+                        <div class="settings-about-banner">
+                            <div class="settings-about-logo">
+                                <div class="settings-logo-icon"></div>
+                            </div>
+                            <div class="settings-about-details">
+                                <h4 class="settings-about-title">Why Zenless Mod manager</h4>
+                                <p class="settings-about-subtitle" data-i18n-text="settings_about_subtitle">Менеджер модификаций Zenless Zone Zero</p>
+                            </div>
+                        </div>
+
+                        <div class="settings-divider"></div>
+
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">
+                                    <span data-i18n-text="settings_launcher_version">Версия лаунчера</span>: <strong id="setting-launcher-version" class="settings-version-pill">...</strong>
+                                </div>
+                                <div class="settings-row-desc" data-i18n-text="settings_check_updates_desc">Проверить наличие новой версии программы</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <button id="btn-check-updates" class="btn-secondary" data-i18n-text="settings_check_updates_btn">Проверить обновления</button>
+                            </div>
+                        </div>
+
+                        <div class="settings-divider"></div>
+
+                        <div class="settings-row">
+                            <div class="settings-row-info">
+                                <div class="settings-row-title">
+                                    <span data-i18n-text="settings_author_label">Автор</span>: <strong class="settings-author-name">whityx</strong>
+                                </div>
+                                <div class="settings-row-desc" data-i18n-text="settings_author_desc">Разработка и поддержка проекта</div>
+                            </div>
+                            <div class="settings-row-control">
+                                <a href="https://github.com/whityx/WZMM/" target="_blank" class="settings-github-link" id="settings-github-link" title="https://github.com/whityx/WZMM/">
+                                    <svg class="settings-github-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                                    </svg>
+                                    <span data-i18n-text="settings_project_link">Исходный код (GitHub)</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
-</div>
-
-<div class="divider"></div>
-
-<div class="toggle-row">
-    <div class="toggle-label" data-i18n-text="settings_theme">Тема оформления</div>
-    <div class="select-wrapper">
-        <select id="setting-theme" class="mods-filter-select">
-        </select>
-    </div>
-</div>
-<div class="toggle-row">
-    <div class="toggle-label" data-i18n-text="settings_lang">Язык | Language</div>
-    <div class="select-wrapper">
-        <select id="language-selector" class="mods-filter-select">
-            <option value="ru">Русский</option>
-            <option value="en">English</option>
-        </select>
-    </div>
-</div>
-<div class="toggle-row">
-    <div class="toggle-label" data-i18n-text="settings_nsfw">Фильтр контента (18+)</div>
-    <div class="select-wrapper">
-        <select id="setting-nsfw-mode" class="mods-filter-select">
-            <option value="show" data-i18n-text="settings_nsfw_show">Показывать всё</option>
-            <option value="blur" data-i18n-text="settings_nsfw_blur">Размывать везде</option>
-            <option value="blur_local_only" data-i18n-text="settings_nsfw_blur_local_only">Размывать только локальные моды</option>
-            <option value="blur_download_only" data-i18n-text="settings_nsfw_blur_download_only">Размывать только из вкладки скачать</option>
-            <option value="hide" data-i18n-text="settings_nsfw_hide">Скрывать полностью</option>
-        </select>
-    </div>
-</div>
-<div class="toggle-row">
-    <div class="toggle-label" data-i18n-text="settings_skip_splash">Пропускать экран загрузки при запуске</div>
-    <label class="toggle-switch">
-        <input type="checkbox" id="setting-skip-splash">
-        <span class="toggle-slider"></span>
-    </label>
-</div>
-
-<div class="divider"></div>
-
-<div class="settings-footer">
-    <div class="settings-author-info">
-        <span class="settings-author-text"><span data-i18n-text="settings_author_label">Автор</span>: <strong class="settings-author-name">whityx</strong></span>
-    </div>
-    <a href="https://github.com/whityx/WZMM/" target="_blank" class="settings-github-link" id="settings-github-link" title="https://github.com/whityx/WZMM/">
-        <svg class="settings-github-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-        </svg>
-        <span data-i18n-text="settings_project_link">Исходный код (GitHub)</span>
-    </a>
 </div>

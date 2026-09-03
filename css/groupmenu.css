@@ -301,6 +301,56 @@
   background: var(--accent-hover, #6a58a6);
 }
 
+.btn-group-action {
+  flex: 1;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn-group-action svg {
+  flex-shrink: 0;
+}
+
+.btn-group-action:active {
+  transform: translateY(0);
+}
+
+.btn-group-enable {
+  background: var(--accent);
+  color: var(--text-on-accent, #ffffff);
+  border: 1px solid var(--accent);
+  box-shadow: 0 2px 8px var(--accent-dim);
+}
+
+.btn-group-enable:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow: 0 4px 12px var(--accent-dim);
+  transform: translateY(-1px);
+}
+
+.btn-group-disable {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.btn-group-disable:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+
 .btn-group-icon {
   width: 28px;
   height: 28px;
