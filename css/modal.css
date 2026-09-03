@@ -1097,7 +1097,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100002;
+  z-index: 1000000;
   padding: 24px;
   box-sizing: border-box;
   opacity: 0;
@@ -1235,16 +1235,116 @@
 }
 
 .wzmm-update-notes {
-  max-height: 140px;
+  max-height: 160px;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   font-size: 0.82rem;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--text-secondary, #cbd5e1);
   word-break: break-word;
+}
+
+.wzmm-update-notes p {
+  margin: 0 0 6px 0;
+}
+
+.wzmm-update-notes p:last-child {
+  margin-bottom: 0;
+}
+
+.wzmm-update-notes .wzmm-release-h {
+  color: var(--text-primary, #ffffff);
+  font-weight: 600;
+  margin: 10px 0 5px 0;
+  line-height: 1.3;
+}
+
+.wzmm-update-notes .wzmm-release-h:first-child {
+  margin-top: 0;
+}
+
+.wzmm-update-notes .wzmm-release-h1 {
+  font-size: 1.05rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 4px;
+}
+
+.wzmm-update-notes .wzmm-release-h2 {
+  font-size: 0.95rem;
+}
+
+.wzmm-update-notes .wzmm-release-h3 {
+  font-size: 0.88rem;
+}
+
+.wzmm-update-notes .wzmm-release-h4 {
+  font-size: 0.84rem;
+}
+
+.wzmm-update-notes .wzmm-release-list {
+  margin: 4px 0 8px 0;
+  padding-left: 18px;
+}
+
+.wzmm-update-notes .wzmm-release-list li {
+  margin: 2px 0;
+}
+
+.wzmm-update-notes strong {
+  color: var(--text-primary, #ffffff);
+  font-weight: 600;
+}
+
+.wzmm-update-notes .wzmm-release-code {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-family: monospace;
+}
+
+.wzmm-update-notes .wzmm-release-pre {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.wzmm-update-notes .wzmm-release-pre code {
+  background: transparent;
+  padding: 0;
+  color: #e2e8f0;
+}
+
+.wzmm-update-notes .wzmm-release-link {
+  color: var(--accent, #a855f7);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: opacity 0.15s ease;
+  cursor: pointer;
+}
+
+.wzmm-update-notes .wzmm-release-link:hover {
+  opacity: 0.8;
+}
+
+.wzmm-update-notes .wzmm-release-quote {
+  border-left: 3px solid var(--accent, #a855f7);
+  padding-left: 10px;
+  margin: 6px 0;
+  color: var(--text-muted, #94a3b8);
+}
+
+.wzmm-update-notes .wzmm-release-hr {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 10px 0;
 }
 
 .wzmm-update-progress-area {

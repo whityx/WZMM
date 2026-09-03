@@ -3922,9 +3922,13 @@ document.addEventListener("DOMContentLoaded", () => {
     AutoUpdater.checkForUpdates()
       .then((info) => {
         if (info.hasUpdate) {
-          SplashManager.lock();
           SplashManager.setProgress(100, t("splash_status_update_found", { version: info.latestVersion }));
-          AutoUpdater.showUpdateModal(info, null, true);
+          setTimeout(() => {
+            SplashManager.hide();
+            AutoUpdater.showUpdateModal(info, () => {
+              startAppInit();
+            }, false);
+          }, 350);
         } else {
           startAppInit();
         }
