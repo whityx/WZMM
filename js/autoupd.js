@@ -177,6 +177,7 @@ const AutoUpdater = {
       let total = asset.size || 0;
       let lastDownloaded = 0;
       let lastTime = Date.now();
+      let currentSpeed = 0;
 
       const fetchUrl = (currentUrl) => {
         const client = currentUrl.startsWith('https') ? https : http;
@@ -204,23 +205,22 @@ const AutoUpdater = {
             downloaded += chunk.length;
             const now = Date.now();
             const timeDiff = (now - lastTime) / 1000;
-            let speed = 0;
 
-            if (timeDiff >= 0.3) {
-              speed = (downloaded - lastDownloaded) / timeDiff;
+            if (timeDiff >= 0.25) {
+              currentSpeed = (downloaded - lastDownloaded) / timeDiff;
               lastTime = now;
               lastDownloaded = downloaded;
             }
 
             const percent = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
-            const speedMb = (speed / (1024 * 1024)).toFixed(1);
+            const speedMb = (currentSpeed / (1024 * 1024)).toFixed(1);
 
             if (typeof onProgress === 'function') {
               onProgress({
                 percent,
                 downloaded,
                 total,
-                speed,
+                speed: currentSpeed,
                 formattedSpeed: `${speedMb} MB/s`,
                 filePath: targetPath
               });
