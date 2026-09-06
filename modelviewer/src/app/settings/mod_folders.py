@@ -1,0 +1,180 @@
+"""Persistent app configuration and safe Mod Folder enumeration.
+
+The registry stores only user-approved roots, alongside small global viewer
+preferences.  This module deliberately does not decide whether a directory is
+a loadable mod; that remains the loader's responsibility.  The API layer
+supplies the native-picker authorization needed before a root can be added or
+changed.
+"""
+
+import os
+
+from . import config
+
+
+CONFIG_VERSION = config.CONFIG_VERSION
+DEFAULT_PANEL_OPACITY = 58
+PANEL_OPACITY_KEY = "panelOpacity"
+
+
+class ModFolderError(ValueError):
+    """A readable validation, config or enumeration failure."""
+
+
+normalize_path = config.normalize_path
+is_within = config.is_within
+
+
+def _read_config(config_file=None):
+    try:
+        return config.read_config(config_file)
+    except ValueError as error:
+        raise ModFolderError(str(error)) from error
+
+
+def _read_entries(config_file=None):
+    raw_entries = _read_config(config_file)["modFolders"]
+
+    entries = []
+    seen = set()
+    for raw in raw_entries:
+        if not isinstance(raw, dict):
+            raise ModFolderError("Each Mod Folder entry must be an object.")
+        name = raw.get("name")
+        folder = raw.get("path")
+        if not isinstance(name, str) or not name.strip():
+            raise ModFolderError("Each Mod Folder needs a non-empty name.")
+        if not isinstance(folder, str) or not os.path.isabs(folder):
+            raise ModFolderError("Each Mod Folder path must be absolute.")
+        normalized = normalize_path(folder)
+        if normalized in seen:
+            raise ModFolderError("config.json contains duplicate Mod Folder paths.")
+        seen.add(normalized)
+        entries.append({"name": name.strip(), "path": normalized})
+    return entries
+
+
+def load_registry(config_file=None):
+    """Return registry entries without creating config.json when absent."""
+    return _read_entries(config_file)
+
+
+def _validated_entry(name, folder, *, require_exists):
+    if not isinstance(name, str) or not name.strip():
+        raise ModFolderError("Mod Folder name must not be empty.")
+    if not isinstance(folder, str) or not os.path.isabs(folder):
+        raise ModFolderError("Mod Folder path must be absolute.")
+    normalized = normalize_path(folder)
+    if require_exists and not os.path.isdir(normalized):
+        raise ModFolderError("Mod Folder path must be an existing directory.")
+    return {"name": name.strip(), "path": normalized}
+
+
+def _write_config(value, config_file=None):
+    try:
+        config.write_config(value, config_file)
+    except ValueError as error:
+        raise ModFolderError(str(error)) from error
+
+
+def _write_entries(entries, config_file=None):
+    config = _read_config(config_file)
+    config["modFolders"] = entries
+    _write_config(config, config_file)
+
+
+def _validated_panel_opacity(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ModFolderError("Panel opacity must be a whole number from 0 to 100.")
+    if not float(value).is_integer() or not 0 <= value <= 100:
+        raise ModFolderError("Panel opacity must be a whole number from 0 to 100.")
+    return int(value)
+
+
+def load_panel_opacity(config_file=None):
+    """Return the global panel opacity, using the implicit default when absent."""
+    config = _read_config(config_file)
+    if PANEL_OPACITY_KEY not in config:
+        return DEFAULT_PANEL_OPACITY
+    return _validated_panel_opacity(config[PANEL_OPACITY_KEY])
+
+
+def save_panel_opacity(value, config_file=None):
+    """Persist an explicitly changed global panel opacity."""
+    opacity = _validated_panel_opacity(value)
+    config = _read_config(config_file)
+    config[PANEL_OPACITY_KEY] = opacity
+    _write_config(config, config_file)
+    return opacity
+
+
+def add_folder(name, folder, config_file=None):
+    entries = _read_entries(config_file)
+    entry = _validated_entry(name, folder, require_exists=True)
+    if any(item["path"] == entry["path"] for item in entries):
+        raise ModFolderError("That Mod Folder path is already registered.")
+    entries.append(entry)
+    _write_entries(entries, config_file)
+    return entries
+
+
+def edit_folder(original_folder, name, folder, config_file=None):
+    entries = _read_entries(config_file)
+    original = normalize_path(original_folder)
+    index = next((i for i, item in enumerate(entries)
+                  if item["path"] == original), None)
+    if index is None:
+        raise ModFolderError("That Mod Folder is not registered.")
+
+    target = normalize_path(folder)
+    entry = _validated_entry(
+        name, folder, require_exists=(target != original))
+    if any(i != index and item["path"] == entry["path"]
+           for i, item in enumerate(entries)):
+        raise ModFolderError("That Mod Folder path is already registered.")
+    entries[index] = entry
+    _write_entries(entries, config_file)
+    return entries
+
+
+def delete_folder(folder, config_file=None):
+    entries = _read_entries(config_file)
+    target = normalize_path(folder)
+    filtered = [item for item in entries if item["path"] != target]
+    if len(filtered) == len(entries):
+        raise ModFolderError("That Mod Folder is not registered.")
+    _write_entries(filtered, config_file)
+    return filtered
+
+
+def list_subfolders(folder, authorized_root):
+    """Return immediate safe directory children of one authorized root."""
+    folder = normalize_path(folder)
+    authorized_root = normalize_path(authorized_root)
+    if not is_within(folder, authorized_root):
+        raise ModFolderError("That folder is outside the registered Mod Folder.")
+    if not os.path.isdir(folder):
+        raise ModFolderError("Folder not found or is not a directory.")
+
+    children = []
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                try:
+                    if not entry.is_dir(follow_symlinks=True):
+                        continue
+                    child = normalize_path(entry.path)
+                    if is_within(child, authorized_root):
+                        children.append({"name": entry.name, "path": child})
+                except OSError:
+                    # A disappearing or inaccessible child should not make
+                    # the entire registered root unusable.
+                    continue
+    except OSError as error:
+        raise ModFolderError(f"Unable to read this folder: {error}") from error
+    return sorted(children, key=lambda item: (item["name"].casefold(), item["name"]))
+
+
+def registered_paths(entries):
+    """Return canonical root paths from a registry entry list."""
+    return {entry["path"] for entry in entries}

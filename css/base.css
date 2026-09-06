@@ -8,6 +8,11 @@
   padding: 0;
 }
 
+*:focus,
+*:focus-visible {
+  outline: none !important;
+}
+
 html {
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
@@ -766,8 +771,7 @@ select option:checked,
 
 .modal-status {
   font-weight: 500;
-  font-size: 0.9rem;
-  margin-bottom: 24px;
+  font-size: 0.85rem;
   color: var(--text-secondary);
 }
 
@@ -783,8 +787,10 @@ select option:checked,
   font-size: 0.95rem;
   color: var(--text-secondary);
   word-wrap: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   white-space: pre-wrap;
+  max-width: 100%;
 }
 
 .modal-text a,
@@ -793,6 +799,8 @@ select option:checked,
   text-decoration: none;
   font-weight: 500;
   transition: var(--transition-fast);
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .modal-text a:hover,
@@ -802,6 +810,21 @@ select option:checked,
 
 .modal-text * {
   max-width: 100% !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+.modal-text pre,
+.modal-text code {
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  overflow-wrap: anywhere !important;
+}
+
+.modal-text table {
+  width: 100% !important;
+  table-layout: fixed;
+  word-break: break-word;
 }
 
 .modal-text img,

@@ -46,7 +46,7 @@ const AutoUpdater = {
       }
     } catch (_) {}
 
-    return '0.2.3';
+    return '0.3.0';
   },
 
   compareVersions(v1, v2) {

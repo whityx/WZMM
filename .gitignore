@@ -147,3 +147,25 @@ scripts/
 API_NOTES.md
 .tests/
 .agents/
+
+# 3D Model Viewer
+modelviewer/.venv/
+modelviewer/.venv*/
+modelviewer/**/__pycache__/
+modelviewer/**/*.pyc
+modelviewer/**/*.pyo
+modelviewer/**/*.pyd
+modelviewer/**/.deps_installed
+modelviewer/src/app/settings/_baked_features.py
+modelviewer/src/config.json
+modelviewer/src/asset-index/
+modelviewer/src/build/
+modelviewer/dist/
+modelviewer/*.spec
+modelviewer/src/tests/**/__pycache__/
+modelviewer/.pytest_cache/
+modelviewer/viewer_launch.log
+modelviewer/*.log
+modelviewer/**/.pytest_cache/
+
+

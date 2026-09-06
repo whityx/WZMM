@@ -406,6 +406,362 @@
   box-shadow: 0 0 12px var(--accent-dim);
 }
 
+.settings-features-header {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-features-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-features-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--accent-dim);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+}
+
+.features-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.feature-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 22px;
+  gap: 18px;
+  transition: background-color var(--transition-fast, 0.15s ease);
+}
+
+.feature-item-row + .feature-item-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.feature-item-row:hover {
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.02));
+}
+
+.feature-item-thumb {
+  width: 108px;
+  height: 64px;
+  border-radius: var(--radius-md, 12px);
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-subtle);
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color var(--transition-fast, 0.15s ease), box-shadow var(--transition-fast, 0.15s ease), transform var(--transition-fast, 0.15s ease);
+}
+
+.feature-item-thumb:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-dim);
+  transform: scale(1.02);
+}
+
+.feature-item-view-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--accent-dim, rgba(86, 71, 135, 0.45));
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-on-accent, #ffffff);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.feature-item-thumb:hover .feature-item-view-overlay {
+  opacity: 1;
+}
+
+.feature-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.feature-item-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.feature-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 9999px);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.feature-status-badge.active {
+  background: var(--accent-dim);
+  color: var(--accent-hover, var(--text-primary));
+  border: 1px solid var(--accent);
+}
+
+.feature-status-badge.active .feature-status-badge-dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.feature-status-badge.inactive {
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.05));
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+.feature-status-badge.not-installed {
+  background: var(--color-danger-dim, rgba(239, 68, 68, 0.1));
+  color: var(--color-danger, #ef4444);
+  border: 1px solid var(--border-subtle);
+}
+
+.feature-status-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.feature-item-desc {
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.feature-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.feature-item-author {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.feature-item-author svg {
+  color: var(--accent);
+}
+
+.feature-options-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.feature-options-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.feature-options-label svg {
+  color: var(--accent);
+}
+
+.feature-options-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.feature-option-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border-radius: var(--radius-pill, 9999px);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.feature-option-checkbox-label:hover {
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.feature-option-checkbox-label:has(input:checked) {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px var(--accent-dim);
+}
+
+.feature-option-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.feature-option-checkbox-custom {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid var(--text-muted);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-fast, 0.15s ease);
+  position: relative;
+}
+
+.feature-option-checkbox-label:hover .feature-option-checkbox-custom {
+  border-color: var(--text-secondary);
+}
+
+.feature-option-checkbox:checked + .feature-option-checkbox-custom {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.feature-option-checkbox:checked + .feature-option-checkbox-custom::after {
+  content: "";
+  width: 3.5px;
+  height: 7px;
+  border: solid var(--text-on-accent, #ffffff);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg) translate(-0.5px, -0.5px);
+  display: block;
+}
+
+.feature-option-text {
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast, 0.15s ease);
+}
+
+.feature-option-checkbox-label:has(input:checked) .feature-option-text {
+  color: var(--text-on-accent, #ffffff);
+  font-weight: 600;
+}
+
+.feature-item-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.feature-item-controls .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: var(--radius-md, 12px);
+  background: var(--accent);
+  color: var(--text-on-accent, #ffffff);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--accent-dim);
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.feature-item-controls .btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow: 0 0 16px var(--accent-dim);
+}
+
+.feature-item-controls .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-md, 12px);
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.feature-item-controls .btn-secondary:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text-on-accent, #ffffff);
+  box-shadow: 0 0 10px var(--accent-dim);
+}
+
+.feature-btn-delete-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md, 12px);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.feature-btn-delete-item:hover {
+  background: var(--color-danger-dim, rgba(239, 68, 68, 0.15));
+  border-color: var(--color-danger-dim, rgba(239, 68, 68, 0.3));
+  color: var(--color-danger, #ef4444);
+}
+
+.features-empty-state {
+  padding: 32px 22px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 @media (max-width: 820px) {
   .settings-layout {
     flex-direction: column;

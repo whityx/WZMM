@@ -497,3 +497,48 @@
   opacity: 1;
   transform: scale(1.15);
 }
+
+.gb-fav-star-icon {
+  color: var(--accent) !important;
+  fill: var(--accent) !important;
+  stroke: var(--accent) !important;
+}
+
+.gb-fav-count-badge {
+  background: color-mix(in srgb, var(--accent) 15%, transparent) !important;
+  color: var(--accent) !important;
+}
+
+.gb-author-avatar-img {
+  border-radius: 50% !important;
+}
+
+.gb-author-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  opacity: 0.6;
+}
+
+.gb-author-subcat-row:hover .gb-author-remove-btn {
+  opacity: 1;
+}
+
+.gb-author-remove-btn:hover {
+  color: var(--color-red, #f87171);
+  background: rgba(248, 113, 113, 0.15);
+}
+
+.gb-fav-author-empty-item {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}

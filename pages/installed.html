@@ -21,6 +21,7 @@
                         <option value="all" data-i18n-text="installed_filter_all">Все модификации</option>
                         <option value="active" data-i18n-text="installed_filter_active">Только включенные</option>
                         <option value="inactive" data-i18n-text="installed_filter_inactive">Только выключенные</option>
+                        <option value="features" data-i18n-text="installed_filter_features">Фичи / Полезные моды</option>
                     </select>
                 </div>
             </div>
@@ -41,6 +42,47 @@
                 </svg>
                 <span data-i18n-text="installed_groups_btn">Управление группами</span>
             </button>
+
+            <div class="bulk-actions-wrapper" id="bulk-actions-wrapper">
+                <button id="btn-bulk-actions" class="btn-bulk-actions" type="button" data-i18n-title="installed_bulk_actions_btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="9 11 12 14 22 4"></polyline>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                    </svg>
+                    <span data-i18n-text="installed_bulk_actions_btn">Массовые действия</span>
+                    <svg class="bulk-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="bulk-actions-menu" id="bulk-actions-menu">
+                    <button class="bulk-action-item" id="bulk-enable-all" type="button">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                        </svg>
+                        <span data-i18n-text="installed_bulk_enable_all">Включить все моды</span>
+                    </button>
+                    <button class="bulk-action-item" id="bulk-disable-all" type="button">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M11.83 9L15 12.16V12a3 3 0 0 0-3-3h-.17zm-4.3.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>
+                        </svg>
+                        <span data-i18n-text="installed_bulk_disable_all">Выключить все моды</span>
+                    </button>
+                    <div class="bulk-action-divider" id="bulk-filtered-divider" style="display: none;"></div>
+                    <button class="bulk-action-item" id="bulk-enable-filtered" type="button" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span data-i18n-text="installed_bulk_enable_filtered">Включить видимые моды</span>
+                    </button>
+                    <button class="bulk-action-item" id="bulk-disable-filtered" type="button" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        <span data-i18n-text="installed_bulk_disable_filtered">Выключить видимые моды</span>
+                    </button>
+                </div>
+            </div>
         </div>
         <div id="installed-active-filter-bar" class="gb-active-filter-bar"></div>
     </div>
@@ -100,7 +142,22 @@
             <div class="installed-modal-header">
                 <div class="installed-modal-title-row">
                     <h3 id="modal-title" class="modal-title">Название мода</h3>
-                    <div id="modal-status" class="modal-status"></div>
+                    <button id="modal-status" class="modal-status-badge" type="button" title="Состояние мода">
+                        <span class="modal-status-dot"></span>
+                        <span id="modal-status-text" class="modal-status-text"></span>
+                    </button>
+                    <button id="modal-open-3d-btn" class="btn-open-3d" title="3D Просмотр">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg>
+                        <span data-i18n-text="modal_open_3d">3D Просмотр</span>
+                    </button>
+                </div>
+                <div id="modal-author-row" class="modal-author-row" style="display: none;">
+                    <span class="modal-author-label" data-i18n-text="gb_author_by">Автор:</span>
+                    <span id="modal-author-val" class="modal-author-val"></span>
                 </div>
                 <div id="modal-char-row" class="modal-char-row" style="display: none;">
                     <div class="modal-char-header">

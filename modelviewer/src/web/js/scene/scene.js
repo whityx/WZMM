@@ -1,0 +1,515 @@
+// Three.js scene composition and the WebGPU-native on-demand viewport renderer.
+
+import * as THREE from 'three/webgpu';
+import { ArcballControls } from 'three/addons/controls/ArcballControls.js';
+import { createCameraFrame } from './camera-frame.js';
+import { createCharacterShadowController } from './character-shadow-controller.js';
+import { createEnvironmentController } from './environment.js';
+import { createKeyLightController } from './key-light-controller.js';
+import {
+  resetOutlineProjectionReference,
+  updateOutlineProjectionScale,
+} from './outline-renderer.js';
+import { setBCTextureCompression } from './renderer-capabilities.js';
+import { requestRender, setRenderCallback } from './render-scheduler.js';
+import { createViewportRenderPipeline } from './viewport-render-pipeline.js';
+import { createViewGizmoController } from './view-gizmo-controller.js';
+import { createPhysicsDragController } from './physics-drag-controller.js';
+
+const container = document.getElementById('canvas-container');
+const openButton = document.getElementById('open-btn');
+const rendererError = document.getElementById('renderer-error');
+let rendererStopped = false;
+
+export const renderer = new THREE.WebGPURenderer({
+  antialias: true,
+  samples: 4,
+  alpha: false,
+});
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.toneMappingExposure = 1;
+const themeBgColor = (() => {
+  try {
+    const val = getComputedStyle(document.documentElement).getPropertyValue('--bg-main').trim();
+    return val || '#08080a';
+  } catch (_) {
+    return '#08080a';
+  }
+})();
+renderer.setClearColor(new THREE.Color(themeBgColor), 1);
+renderer.setClearAlpha(1);
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(container.clientWidth, container.clientHeight);
+container.appendChild(renderer.domElement);
+
+function showRendererError(message) {
+  rendererStopped = true;
+  openButton.disabled = true;
+  if (!rendererError) return;
+  const detail = rendererError.querySelector('.renderer-error-detail');
+  if (detail) detail.textContent = message;
+  rendererError.classList.add('show');
+}
+
+function failRenderer(message) {
+  if (rendererStopped) return;
+  rendererStopped = true;
+  showRendererError(message);
+}
+
+function rendererFailureMessage(error) {
+  const detail = error?.message ? ` (${error.message})` : '';
+  return `WebGPU is required by this version of Mod Viewer. Update your `
+    + `graphics driver or use a browser with WebGPU support${detail}`;
+}
+
+async function initializeRenderer() {
+  if (globalThis.navigator?.gpu
+      && typeof globalThis.navigator.gpu.requestAdapter === 'function') {
+    try {
+      const adapter = await globalThis.navigator.gpu.requestAdapter({
+        powerPreference: 'high-performance',
+        featureLevel: 'core',
+      });
+      if (adapter) {
+        const supportsBC = adapter.features?.has?.(
+          'texture-compression-bc') === true;
+        const device = await adapter.requestDevice({
+          requiredFeatures: supportsBC ? ['texture-compression-bc'] : [],
+        });
+        if (device) {
+          setBCTextureCompression(
+            device.features?.has?.('texture-compression-bc') === true);
+          renderer.backend.parameters.device = device;
+          await renderer.init();
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('WebGPU init failed, falling back to WebGL:', e);
+    }
+  }
+
+  // Fallback to WebGL backend (Three.js r185 WebGPURenderer WebGL2 backend)
+  await renderer.init();
+  return true;
+}
+
+export function isRendererAvailable() {
+  return !rendererStopped;
+}
+
+renderer.onDeviceLost = info => {
+  failRenderer(`The WebGPU device was lost: ${info?.message || 'unknown reason'}.`);
+};
+renderer.onError = info => {
+  failRenderer(`WebGPU reported an unrecoverable error: ${info?.message || 'unknown error'}.`);
+};
+
+export const scene = new THREE.Scene();
+scene.background = new THREE.Color(themeBgColor);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
+const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x30343f, 0.35);
+scene.add(ambientLight, hemisphereLight);
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1);
+keyLight.position.set(5, 10, 7);
+scene.add(keyLight, keyLight.target);
+
+const themeAccentColor = (() => {
+  try {
+    const val = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    return val || '#D97706';
+  } catch (_) {
+    return '#D97706';
+  }
+})();
+const grid = new THREE.GridHelper(4, 20, new THREE.Color(themeAccentColor).getHex(), 0x22242c);
+scene.add(grid);
+
+function applyGridAccent() {
+  try {
+    const val = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#D97706';
+    const c1 = new THREE.Color(val);
+    const c2 = new THREE.Color(0x22242c);
+    const colors = grid.geometry.attributes.color;
+    if (!colors) return;
+    let j = 0;
+    const divisions = 20;
+    const center = 10;
+    for (let i = 0; i <= divisions; i++) {
+      const c = (i === center) ? c1 : c2;
+      colors.setXYZ(j++, c.r, c.g, c.b);
+      colors.setXYZ(j++, c.r, c.g, c.b);
+      colors.setXYZ(j++, c.r, c.g, c.b);
+      colors.setXYZ(j++, c.r, c.g, c.b);
+    }
+    colors.needsUpdate = true;
+    requestRender();
+  } catch (_) {}
+}
+
+window.addEventListener('DOMContentLoaded', applyGridAccent);
+window.addEventListener('load', applyGridAccent);
+try {
+  const themeObserver = new MutationObserver(() => applyGridAccent());
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style'] });
+} catch (_) {}
+
+export const camera = new THREE.PerspectiveCamera(
+  45, container.clientWidth / container.clientHeight, 0.001, 1000);
+camera.position.set(0, 1, 3);
+
+export const controls = new ArcballControls(camera, renderer.domElement, scene);
+controls.target.set(0, 0, 0);
+controls.enableAnimations = true;
+// Keep wheel zoom anchored to the point under the cursor for model inspection.
+controls.cursorZoom = true;
+// Model-scaled clipping belongs to cameraFrame; Arcball must not overwrite it.
+controls.adjustNearFar = false;
+controls.setGizmosVisible(false);
+
+const physicsDragController = createPhysicsDragController({
+  canvas: renderer.domElement,
+  camera,
+  controls,
+  onMotion: detail => window.dispatchEvent(new CustomEvent(
+    'mod-viewer-virtual-model-motion', {detail})),
+  requestRender,
+});
+
+export function setPhysicsInteractionEnabled(enabled) {
+  return physicsDragController.setEnabled(enabled);
+}
+
+const environmentController = createEnvironmentController({
+  renderer,
+  scene,
+  ambientLight,
+  hemisphereLight,
+  lightTarget: keyLight.target,
+  onVisualChange: requestRender,
+});
+const keyLightController = createKeyLightController({
+  scene, camera, renderer, controls, light: keyLight, onChange: requestRender,
+});
+const characterShadowController = createCharacterShadowController({
+  renderer, scene, light: keyLight,
+});
+const viewportRenderPipeline = createViewportRenderPipeline({
+  renderer, scene, camera,
+});
+const viewGizmoController = createViewGizmoController({
+  camera, controls, element: document.getElementById('view-gizmo'),
+  onChange: requestRender,
+});
+const cameraFrame = createCameraFrame({
+  camera,
+  renderer,
+  controls,
+  grid,
+  cancelViewSnap: viewGizmoController.cancelSnap,
+  onModelFit: keyLightController.rebase,
+});
+
+new ResizeObserver(() => {
+  cameraFrame.resize(container.clientWidth, container.clientHeight);
+  requestRender();
+}).observe(container);
+
+let renderCount = 0;
+
+function renderFrame() {
+  if (rendererStopped) return;
+  const snapActive = viewGizmoController.updateSnap();
+  keyLightController.update();
+  characterShadowController.update();
+  cameraFrame.updateViewport();
+  cameraFrame.updateClipping();
+  updateOutlineProjectionScale(
+    camera, controls.target, renderer.domElement.clientHeight);
+  viewGizmoController.updateAxes();
+  viewportRenderPipeline.render();
+  renderCount += 1;
+  if (snapActive) requestRender();
+}
+
+setRenderCallback(renderFrame);
+controls.addEventListener('change', requestRender);
+
+export const rendererReady = initializeRenderer()
+  .then(() => {
+    if (rendererError) rendererError.classList.remove('show');
+    requestRender();
+    openButton.disabled = false;
+    void environmentController.prepare()
+      .catch(error => {
+        // Optional IBL must not make renderer startup unusable.
+        console.debug(
+          'Environment preparation failed; using baseline lighting.',
+          error,
+        );
+      });
+    return true;
+  })
+  .catch(error => {
+    showRendererError(rendererFailureMessage(error));
+    return false;
+  });
+
+export function setEnvironmentPreset(id) {
+  const changed = environmentController.setPreset(id);
+  if (changed) requestRender();
+  return changed;
+}
+
+export function getEnvironmentPreset() {
+  return environmentController.getPreset();
+}
+
+export function getEnvironmentDebugState() {
+  return environmentController.getDebugState();
+}
+
+export function toggleGrid() {
+  grid.visible = !grid.visible;
+  const button = document.getElementById('grid-btn');
+  button.classList.toggle('off', !grid.visible);
+  button.setAttribute('aria-pressed', String(grid.visible));
+  button.setAttribute('aria-label', `Grid visibility: ${grid.visible ? 'on' : 'off'}`);
+  requestRender();
+}
+
+export function toggleTrackballGizmo() {
+  viewGizmoController.toggle();
+}
+
+export function setKeyLightIntensity(value) {
+  const changed = keyLightController.setIntensity(value);
+  if (changed) requestRender();
+  return changed;
+}
+
+export function getKeyLightIntensity() {
+  return keyLightController.getIntensity();
+}
+
+export function frameView(meshes = [], direction = null, targetYOffset = 0) {
+  cameraFrame.frameView(meshes, direction, targetYOffset);
+  resetOutlineProjectionReference(camera, controls.target);
+  requestRender();
+}
+
+export function resetView() {
+  const reset = cameraFrame.resetView();
+  const restoredMeshes = reset?.meshes || [];
+  resetOutlineProjectionReference(camera, controls.target);
+  characterShadowController.invalidateGeometry();
+  viewportRenderPipeline.invalidateGeometry();
+  notifyModelTransformChanged(
+    restoredMeshes, 'reset-view', reset?.translationDeltaWorld || null);
+  requestRender();
+}
+
+export function getModelTransformState() {
+  return cameraFrame.getModelTransformState();
+}
+
+function translationArray(delta) {
+  if (!delta) return null;
+  const values = delta.isVector3 ? [delta.x, delta.y, delta.z]
+    : Array.isArray(delta) ? delta : [delta.x, delta.y, delta.z];
+  if (values.length < 3) return null;
+  const normalized = values.slice(0, 3).map(Number);
+  return normalized.every(Number.isFinite) ? normalized : null;
+}
+
+function kinematicsPayload(kinematics) {
+  const velocity = translationArray(kinematics?.linearVelocityWorld);
+  return velocity ? {linearVelocityWorld: velocity} : null;
+}
+
+function modelTransformPayload(value) {
+  const state = value || cameraFrame.getModelTransformState();
+  const orientation = state?.orientation;
+  const translation = state?.translation;
+  if (!orientation || !translation) return null;
+  const orientationValues = orientation.isQuaternion
+    ? [orientation.x, orientation.y, orientation.z, orientation.w]
+    : orientation;
+  const translationValues = translation.isVector3
+    ? [translation.x, translation.y, translation.z] : translation;
+  const normalizedOrientation = orientationValues?.slice?.(0, 4).map(Number);
+  const normalizedTranslation = translationValues?.slice?.(0, 3).map(Number);
+  if (normalizedOrientation?.length !== 4
+      || !normalizedOrientation.every(Number.isFinite)
+      || normalizedTranslation?.length !== 3
+      || !normalizedTranslation.every(Number.isFinite)) return null;
+  return {
+    orientation: normalizedOrientation,
+    translation: normalizedTranslation,
+  };
+}
+
+function notifyModelTransformChanged(
+    meshes, reason, translationDeltaWorld = null, kinematics = null) {
+  if (!meshes?.length || typeof window === 'undefined') return;
+  const detail = {
+    meshes,
+    reason,
+    translationDeltaWorld: translationArray(translationDeltaWorld),
+    modelTransform: modelTransformPayload(),
+  };
+  const normalizedKinematics = kinematicsPayload(kinematics);
+  if (normalizedKinematics) detail.kinematics = normalizedKinematics;
+  window.dispatchEvent(new CustomEvent('mod-viewer-model-transform-changed', {
+    detail,
+  }));
+}
+
+export function translateModel(meshes = [], delta, options = {}) {
+  const changedMeshes = cameraFrame.translateModel(meshes, delta);
+  const deltaWorld = translationArray(delta);
+  const kinematics = kinematicsPayload(options?.kinematics);
+  const eventMeshes = changedMeshes.length ? changedMeshes : meshes;
+  if (!deltaWorld || !Array.isArray(eventMeshes) || !eventMeshes.length
+      || (!changedMeshes.length && !kinematics)) return [];
+  if (changedMeshes.length) {
+    characterShadowController.invalidateGeometry();
+    viewportRenderPipeline.invalidateGeometry();
+  }
+  notifyModelTransformChanged(
+    eventMeshes, 'translate', deltaWorld, kinematics);
+  requestRender();
+  return changedMeshes;
+}
+
+export function adoptModelMeshes(meshes = []) {
+  const adopted = cameraFrame.adoptModelMeshes(meshes);
+  characterShadowController.adoptMeshes(meshes);
+  viewportRenderPipeline.adoptMeshes(meshes);
+  requestRender();
+  return adopted;
+}
+
+export function fitTo(meshes, options) {
+  cameraFrame.fitTo(meshes, options);
+  if (!options?.preserveCamera) {
+    resetOutlineProjectionReference(camera, controls.target);
+  }
+  characterShadowController.setMeshes(meshes);
+  viewportRenderPipeline.setMeshes(meshes);
+  requestRender();
+}
+
+export function forgetModelMeshes(meshes = []) {
+  cameraFrame.forgetModelMeshes(meshes);
+  characterShadowController.forgetMeshes(meshes);
+  viewportRenderPipeline.forgetMeshes(meshes);
+  requestRender();
+}
+
+export function resetModelOrientation(options) {
+  cameraFrame.resetModelOrientation(options);
+}
+
+export function resetCharacterShadows() {
+  characterShadowController.reset();
+  viewportRenderPipeline.reset();
+}
+
+export function invalidateCharacterShadowGeometry({ request = true } = {}) {
+  characterShadowController.invalidateGeometry();
+  viewportRenderPipeline.invalidateGeometry();
+  if (request) requestRender();
+}
+
+export function invalidateCharacterShadowVisibility({ request = true } = {}) {
+  characterShadowController.invalidateVisibility();
+  if (request) requestRender();
+}
+
+export function invalidateCharacterShadowMap({ request = true } = {}) {
+  characterShadowController.invalidateMap();
+  if (request) requestRender();
+}
+
+export function invalidateCharacterShadowFit({ request = true } = {}) {
+  characterShadowController.invalidateVisibility();
+  if (request) requestRender();
+}
+
+export function invalidateViewportModelGeometry({ request = true } = {}) {
+  viewportRenderPipeline.invalidateGeometry();
+  if (request) requestRender();
+}
+
+export function getCharacterShadowDebugState() {
+  return characterShadowController.getDebugState();
+}
+
+export function getViewportRenderPipelineDebugState() {
+  return viewportRenderPipeline.getDebugState();
+}
+
+export function setAmbientOcclusionStrength(value) {
+  const changed = viewportRenderPipeline.setAmbientOcclusionStrength(value);
+  if (changed) requestRender();
+  return changed;
+}
+
+export function getAmbientOcclusionStrength() {
+  return viewportRenderPipeline.getAmbientOcclusionStrength();
+}
+
+export function setAmbientOcclusionSuppressedByWireframe(value) {
+  viewportRenderPipeline.setAmbientOcclusionSuppressedByWireframe(value);
+  requestRender();
+}
+
+export function setBloomEnabled(value) {
+  const changed = viewportRenderPipeline.setBloomEnabled(value);
+  if (changed) requestRender();
+  return changed;
+}
+
+export function setBloomAvailable(value) {
+  const changed = viewportRenderPipeline.setBloomAvailable(value);
+  if (changed) requestRender();
+  return changed;
+}
+
+export function getBloomEnabled() {
+  return viewportRenderPipeline.getBloomEnabled();
+}
+
+export function setBloomSuppressedByWireframe(value) {
+  viewportRenderPipeline.setBloomSuppressedByWireframe(value);
+  requestRender();
+}
+
+export function setBloomSuppressedByDebug(value) {
+  viewportRenderPipeline.setBloomSuppressedByDebug(value);
+  requestRender();
+}
+
+export function rotateModelQuarterTurn(meshes = []) {
+  const changedMeshes = cameraFrame.rotateModelQuarterTurn(meshes);
+  characterShadowController.invalidateGeometry();
+  viewportRenderPipeline.invalidateGeometry();
+  notifyModelTransformChanged(changedMeshes, 'rotate-y');
+  requestRender();
+}
+
+export function rotateModelHorizontalQuarterTurn(meshes = []) {
+  const changedMeshes = cameraFrame.rotateModelHorizontalQuarterTurn(meshes);
+  characterShadowController.invalidateGeometry();
+  viewportRenderPipeline.invalidateGeometry();
+  notifyModelTransformChanged(changedMeshes, 'rotate-x');
+  requestRender();
+}
+
+export function getRenderCount() {
+  return renderCount;
+}

@@ -35,12 +35,69 @@
                 <span id="gb-filter-badge" class="gb-filter-btn-badge" style="display:none;"></span>
             </button>
             
+
             <button id="gb-refresh-btn" class="btn-refresh">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
                 <span data-i18n-text="gb_btn_refresh">Обновить</span>
             </button>
         </div>
         <div id="gb-active-filter-bar" class="gb-active-filter-bar"></div>
+    </div>
+    
+    <div id="gb-featured-container" class="gb-featured-container" style="display: none;">
+        <div class="gb-featured-widget">
+            <div class="gb-featured-hero" id="gb-featured-hero">
+                <div class="gb-featured-bg-wrapper">
+                    <img id="gb-featured-bg-1" class="gb-featured-bg-slide active" src="" alt="">
+                    <img id="gb-featured-bg-2" class="gb-featured-bg-slide" src="" alt="">
+                </div>
+                <div class="gb-featured-overlay"></div>
+
+                <div class="gb-featured-header-row">
+                    <div class="gb-featured-period-pill">
+                        <svg class="gb-featured-period-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <span id="gb-featured-period-badge"></span>
+                    </div>
+
+                    <div class="gb-featured-author-chip" id="gb-featured-author" style="display: none;">
+                        <img id="gb-featured-author-avatar" class="gb-featured-author-avatar" src="" alt="">
+                        <span id="gb-featured-author-name" class="gb-featured-author-name"></span>
+                    </div>
+                </div>
+
+                <div class="gb-featured-footer-row">
+                    <div class="gb-featured-info-col">
+                        <span class="gb-featured-cat-pill" id="gb-featured-cat-badge" style="display: none;"></span>
+                        <h3 id="gb-featured-name" class="gb-featured-title"></h3>
+                        <p id="gb-featured-desc" class="gb-featured-desc" style="display: none;"></p>
+                    </div>
+
+                    <div class="gb-featured-stats-row">
+                        <div class="gb-featured-stat-chip likes" id="gb-featured-likes">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                            <span class="val">0</span>
+                        </div>
+                        <div class="gb-featured-stat-chip comments" id="gb-featured-comments">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18zM18 14H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+                            <span class="val">0</span>
+                        </div>
+                        <div class="gb-featured-stat-chip views" id="gb-featured-views">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                            <span class="val">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="gb-featured-nav-btn prev" id="gb-featured-prev" type="button">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <button class="gb-featured-nav-btn next" id="gb-featured-next" type="button">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
+
+            <div class="gb-featured-strip" id="gb-featured-thumbs-bar"></div>
+        </div>
     </div>
     
     <div id="gb-loading" class="gb-loading-state" style="display: none;">
@@ -61,8 +118,75 @@
         <div class="modal-content gb-modal-content">
             <span class="modal-close" id="gb-modal-close" title="Закрыть">&times;</span>
             
-            <h3 id="gb-modal-title" class="modal-title">Название мода</h3>
-            <a id="gb-modal-link" class="modal-link" href="#" style="margin-bottom: 20px; display:inline-block;" data-i18n-text="gb_modal_link">Открыть в браузере</a>
+            <div class="gb-modal-header">
+                <div class="gb-modal-title-row">
+                    <h3 id="gb-modal-title" class="modal-title">Название мода</h3>
+                    <span id="gb-modal-version" class="gb-version-badge" style="display: none;"></span>
+                </div>
+                
+                <div class="gb-modal-meta-row">
+                    <div id="gb-modal-author-wrap" class="gb-modal-author" style="display: none;">
+                        <img id="gb-modal-author-avatar" class="gb-author-avatar" src="" alt="">
+                        <div class="gb-author-info">
+                            <span class="gb-author-label" data-i18n-text="gb_author_by">Автор:</span>
+                            <a id="gb-modal-author-name" class="gb-author-name" href="#"></a>
+                            <span id="gb-modal-author-title" class="gb-author-title"></span>
+                            <button id="gb-modal-fav-author-btn" class="gb-modal-fav-author-btn" title="Добавить автора в избранное">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="gb-modal-meta-badges">
+                        <span id="gb-modal-category" class="gb-meta-badge" style="display: none;"></span>
+                        <a id="gb-modal-link" class="modal-link gb-external-link-btn" href="#" data-i18n-text="gb_modal_link">Открыть в браузере</a>
+                    </div>
+                </div>
+
+                <div id="gb-modal-stats" class="gb-modal-stats-bar">
+                    <div class="gb-stat-item" id="gb-stat-views">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <span class="gb-stat-val">0</span>
+                        <span class="gb-stat-label" data-i18n-text="gb_stat_views">Просмотры</span>
+                    </div>
+                    <div class="gb-stat-item" id="gb-stat-downloads">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                        <span class="gb-stat-val">0</span>
+                        <span class="gb-stat-label" data-i18n-text="gb_stat_downloads">Загрузки</span>
+                    </div>
+                    <div class="gb-stat-item" id="gb-stat-likes">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        <span class="gb-stat-val">0</span>
+                        <span class="gb-stat-label" data-i18n-text="gb_stat_likes">Лайки</span>
+                    </div>
+                    <div class="gb-stat-item" id="gb-stat-posts">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+                        <span class="gb-stat-val">0</span>
+                        <span class="gb-stat-label" data-i18n-text="gb_stat_posts">Комментарии</span>
+                    </div>
+                    <div class="gb-stat-item" id="gb-stat-thanks">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                        <span class="gb-stat-val">0</span>
+                        <span class="gb-stat-label" data-i18n-text="gb_stat_thanks">Спасибо</span>
+                    </div>
+                    <div class="gb-stat-item" id="gb-stat-subs">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+                        <span class="gb-stat-val">0</span>
+                        <span class="gb-stat-label" data-i18n-text="gb_stat_subs">Подписчики</span>
+                    </div>
+                    <div class="gb-stat-item" id="gb-stat-date-added">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        <span class="gb-stat-val">-</span>
+                        <span class="gb-stat-label" data-i18n-text="gb_stat_added">Опубликован</span>
+                    </div>
+                    <div class="gb-stat-item" id="gb-stat-date-updated">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                        <span class="gb-stat-val">-</span>
+                        <span class="gb-stat-label" data-i18n-text="gb_stat_updated">Обновлен</span>
+                    </div>
+                </div>
+            </div>
             
             <div class="gb-modal-layout">
                 <div class="gb-modal-left">
@@ -73,7 +197,34 @@
                         </div>
                         <button class="carousel-btn next-btn" id="gb-carousel-next">&gt;</button>
                     </div>
-                    <div id="gb-modal-desc" class="modal-text"></div>
+
+                    <div class="gb-modal-tabs">
+                        <div class="gb-modal-tab-indicator" id="gb-tab-indicator"></div>
+                        <button class="gb-modal-tab-btn active" id="gb-tab-btn-desc" data-tab="desc" data-i18n-text="gb_tab_desc">Описание</button>
+                        <button class="gb-modal-tab-btn" id="gb-tab-btn-comments" data-tab="comments">
+                            <span data-i18n-text="gb_tab_comments">Комментарии</span>
+                            <span id="gb-comments-counter-badge" class="gb-tab-badge">0</span>
+                        </button>
+                        <button class="gb-modal-tab-btn" id="gb-tab-btn-details" data-tab="details" data-i18n-text="gb_tab_details">О моде</button>
+                    </div>
+
+                    <div class="gb-modal-tab-content">
+                        <div id="gb-modal-desc" class="modal-text gb-tab-panel active"></div>
+                        
+                        <div id="gb-modal-comments-panel" class="gb-tab-panel">
+                            <div id="gb-comments-list" class="gb-comments-list"></div>
+                            <div id="gb-comments-loading" class="gb-comments-loading" style="display: none;">
+                                <div class="gb-loading-spinner"></div>
+                                <span data-i18n-text="gb_comments_loading">Загрузка комментариев...</span>
+                            </div>
+                            <div id="gb-comments-empty" class="gb-comments-empty" style="display: none;" data-i18n-text="gb_comments_empty">Комментариев пока нет</div>
+                            <button id="gb-comments-load-more" class="gb-load-more-btn" style="display: none;" data-i18n-text="gb_comments_load_more">Загрузить еще комментарии</button>
+                        </div>
+
+                        <div id="gb-modal-details-panel" class="gb-tab-panel">
+                            <div id="gb-details-content" class="gb-details-content"></div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="gb-modal-right">

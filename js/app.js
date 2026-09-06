@@ -77,6 +77,49 @@ const htmlToPlainText = (html) => {
     .trim();
 };
 
+const sanitizeHtmlContent = (html) => {
+  if (!html) return "";
+  const temp = document.createElement("div");
+  temp.innerHTML = html;
+  temp.querySelectorAll("script, iframe, object, embed, style, form, input").forEach((el) => el.remove());
+  temp.querySelectorAll("*").forEach((el) => {
+    for (let i = el.attributes.length - 1; i >= 0; i--) {
+      const attrName = el.attributes[i].name;
+      if (attrName.startsWith("on") || attrName === "javascript:") {
+        el.removeAttribute(attrName);
+      }
+    }
+  });
+  return temp.innerHTML;
+};
+
+const resolveGbUrl = (rawHref) => {
+  if (!rawHref) return null;
+  const href = String(rawHref).trim();
+  if (!href || href === "#" || href.startsWith("javascript:")) return null;
+  if (href.startsWith("//")) return "https:" + href;
+  if (href.startsWith("http://") || href.startsWith("https://")) return href;
+  if (href.startsWith("/")) return "https://gamebanana.com" + href;
+  if (/^(?:members|mods|sounds|skins|tools|requests|threads|questions|ideas|wips|contests|clubs|studios)\//i.test(href)) {
+    return "https://gamebanana.com/" + href;
+  }
+  return href;
+};
+
+const bindExternalLinks = (container) => {
+  if (!container) return;
+  container.querySelectorAll("a").forEach((a) => {
+    const rawHref = a.getAttribute("href") || a.href || "";
+    const targetUrl = resolveGbUrl(rawHref);
+    a.onclick = (e) => {
+      e.preventDefault();
+      if (targetUrl) {
+        shell.openExternal(targetUrl);
+      }
+    };
+  });
+};
+
 const applyTranslationsToDOM = (container) => {
   container.querySelectorAll("[data-i18n-text]").forEach(el => {
     const key = el.getAttribute("data-i18n-text");
@@ -451,6 +494,477 @@ document.addEventListener("DOMContentLoaded", () => {
   loadTranslations(currentSettings.language || "en");
   applyTranslationsToDOM(document.body);
 
+  document.addEventListener("click", (e) => {
+    const targetA = e.target.closest("a");
+    if (!targetA) return;
+    const rawHref = targetA.getAttribute("href");
+    if (!rawHref || rawHref === "#" || rawHref.startsWith("javascript:")) return;
+    const resolved = resolveGbUrl(rawHref);
+    if (resolved && (resolved.startsWith("http://") || resolved.startsWith("https://"))) {
+      e.preventDefault();
+      shell.openExternal(resolved);
+    }
+  }, true);
+
+  const fetchWithRetry = async (url, options = {}, retries = 2, delay = 800) => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const res = await fetch(url, options);
+        if (res.ok) return res;
+        if (i === retries) return res;
+      } catch (err) {
+        if (err.name === "AbortError" || (options.signal && options.signal.aborted)) {
+          throw err;
+        }
+        if (i === retries) throw err;
+      }
+      await new Promise((r) => setTimeout(r, delay * Math.pow(1.5, i)));
+    }
+  };
+
+  const isModNsfw = (mod) => {
+    if (!mod) return false;
+    let textToScan = (mod._sName || "") + " " + (mod._sDescription || "");
+    if (mod._aContentRatings && typeof mod._aContentRatings === "object") {
+      Object.values(mod._aContentRatings).forEach((r) => {
+        textToScan += " " + r;
+      });
+    }
+    const isNsfwFlagged =
+      mod._bContainsNsfw ||
+      mod._bIsNsfw ||
+      mod._bHasNsfw ||
+      mod._bMatureContent ||
+      mod._sInitialVisibility === "warn" ||
+      mod._sInitialVisibility === "hide";
+    const isNsfwText = typeof nsfwRegex !== "undefined" ? nsfwRegex.test(textToScan) : false;
+    return isNsfwFlagged || isNsfwText;
+  };
+
+  let cachedBestMods = null;
+  let bestModsPromise = null;
+  let currentFeaturedPeriod = "all";
+
+  let gbInitialCatalogPromise = null;
+  let gbInitialCatalogCache = null;
+
+  const preloadImage = (url) => {
+    if (!url) return;
+    try {
+      const img = new Image();
+      img.src = url;
+    } catch (e) {}
+  };
+
+  const preloadDownloadTab = async () => {
+    try {
+      const htmlCssPromise = (async () => {
+        if (htmlCache["download"] === undefined) {
+          const response = await fetch("pages/download.html");
+          if (response.ok) {
+            let html = await response.text();
+            const linkRegex = /<link\s+rel="stylesheet"\s+href="([^"]+)"\s*\/?>/gi;
+            let match;
+            let css = "";
+            while ((match = linkRegex.exec(html)) !== null) {
+              const cssUrl = match[1];
+              const cssRes = await fetch(cssUrl);
+              let cssText = await cssRes.text();
+              cssText = cssText.replace(/@import\s+url\(['"]?base\.css['"]?\);?/gi, "");
+              css += cssText + "\n";
+            }
+            html = html.replace(linkRegex, "");
+            htmlCache["download"] = html;
+            pageCssMap["download"] = css;
+          }
+        }
+      })();
+
+      const showcasePromise = loadBestShowcaseMods().then((res) => {
+        if (res) {
+          Object.values(res).forEach((mod) => {
+            if (mod && mod._aPreviewMedia && mod._aPreviewMedia._aImages && mod._aPreviewMedia._aImages[0]) {
+              const imgObj = mod._aPreviewMedia._aImages[0];
+              const imgUrl = `${imgObj._sBaseUrl}/${imgObj._sFile}`;
+              preloadImage(imgUrl);
+            }
+            if (mod && mod._aSubmitter && mod._aSubmitter._sAvatarUrl) {
+              preloadImage(mod._aSubmitter._sAvatarUrl);
+            }
+          });
+        }
+      });
+
+      let catalogFetchPromise = null;
+      if (!gbInitialCatalogCache && !gbInitialCatalogPromise) {
+        const csvProps =
+          "_idRow,_sName,_aPreviewMedia,_nLikeCount,_tsDateUpdated,_tsDateAdded,_bContainsNsfw,_bIsNsfw,_bHasNsfw,_bMatureContent,_sInitialVisibility,_aContentRatings,_aCategory,_aRootCategory,_aSubCategory,_sDescription";
+        const url = `https://gamebanana.com/apiv11/Mod/Index?_nPage=1&_nPerpage=30&_aFilters[Generic_Game]=19567&_sSort=Generic_MostLiked&_csvProperties=${csvProps}`;
+        catalogFetchPromise = fetchWithRetry(url)
+          .then((r) => (r && r.ok ? r.json() : null))
+          .then((data) => {
+            if (data && Array.isArray(data._aRecords)) {
+              gbInitialCatalogCache = data._aRecords;
+              data._aRecords.slice(0, 15).forEach((mod) => {
+                if (mod && mod._aPreviewMedia && mod._aPreviewMedia._aImages && mod._aPreviewMedia._aImages[0]) {
+                  const imgObj = mod._aPreviewMedia._aImages[0];
+                  const imgUrl = `${imgObj._sBaseUrl}/${imgObj._sFile220 || imgObj._sFile}`;
+                  preloadImage(imgUrl);
+                }
+              });
+            }
+          })
+          .catch(() => null)
+          .finally(() => {
+            gbInitialCatalogPromise = null;
+          });
+        gbInitialCatalogPromise = catalogFetchPromise;
+      } else {
+        catalogFetchPromise = gbInitialCatalogPromise || Promise.resolve();
+      }
+
+      await Promise.all([htmlCssPromise, showcasePromise, catalogFetchPromise]);
+    } catch (e) {}
+  };
+
+  const loadBestShowcaseMods = async (forceRefresh = false) => {
+    if (cachedBestMods && !forceRefresh) return cachedBestMods;
+    if (bestModsPromise && !forceRefresh) return bestModsPromise;
+
+    bestModsPromise = (async () => {
+      try {
+        const csvProps =
+          "_idRow,_sName,_sProfileUrl,_aPreviewMedia,_aSubmitter,_tsDateAdded,_tsDateUpdated,_nLikeCount,_nViewCount,_nDownloadCount,_nPostCount,_sDescription,_sInitialVisibility,_aContentRatings,_aRootCategory,_aCategory,_aSubCategory,_bWasFeatured,_bContainsNsfw,_bIsNsfw,_bHasNsfw,_bMatureContent";
+        const [latestRes, mostLikedRes] = await Promise.all([
+          fetchWithRetry(
+            `https://gamebanana.com/apiv11/Mod/Index?_aFilters[Generic_Game]=19567&_sOrderBy=_tsDateAdded,DESC&_nPerpage=50&_csvProperties=${csvProps}`
+          ).then((r) => (r && r.ok ? r.json() : null)).catch(() => null),
+          fetchWithRetry(
+            `https://gamebanana.com/apiv11/Mod/Index?_aFilters[Generic_Game]=19567&_sSort=Generic_MostLiked&_nPerpage=30&_csvProperties=${csvProps}`
+          ).then((r) => (r && r.ok ? r.json() : null)).catch(() => null)
+        ]);
+
+        const latest = Array.isArray(latestRes?._aRecords) ? latestRes._aRecords : [];
+        const mostLiked = Array.isArray(mostLikedRes?._aRecords) ? mostLikedRes._aRecords : [];
+
+        const map = new Map();
+        [...latest, ...mostLiked].forEach((m) => {
+          if (m && m._idRow) map.set(m._idRow, m);
+        });
+        const allPool = Array.from(map.values());
+        const now = Math.floor(Date.now() / 1000);
+
+        const periodConfigs = [
+          { key: "day", sec: 86400 },
+          { key: "week", sec: 604800 },
+          { key: "month", sec: 2592000 },
+          { key: "6months", sec: 15552000 },
+          { key: "year", sec: 31536000 },
+          { key: "all", sec: null }
+        ];
+
+        const result = {};
+        periodConfigs.forEach((p) => {
+          if (p.sec === null) {
+            result[p.key] = mostLiked[0] || latest[0] || null;
+          } else {
+            const candidates = allPool.filter((m) => (m._tsDateAdded || 0) >= now - p.sec);
+            candidates.sort((a, b) => (Number(b._nLikeCount) || 0) - (Number(a._nLikeCount) || 0));
+            result[p.key] = candidates[0] || mostLiked[0] || latest[0] || null;
+          }
+        });
+
+        cachedBestMods = result;
+        return result;
+      } catch (e) {
+        return null;
+      } finally {
+        bestModsPromise = null;
+      }
+    })();
+
+    return bestModsPromise;
+  };
+
+  const renderFeaturedShowcase = async () => {
+    const container = document.getElementById("gb-featured-container");
+    if (!container) return;
+
+    const searchInput = document.getElementById("gb-search");
+    const hasSearch = Boolean((gbSearchQuery && gbSearchQuery.trim().length > 0) || (searchInput && searchInput.value.trim().length > 0));
+    const hasAuthor = Boolean(gbSelectedAuthor);
+    const hasCategory = Boolean(sideMenuDownload && sideMenuDownload.selectedCategoryId);
+    const hasSort = Boolean(gbSortVal && gbSortVal !== "default");
+
+    if (hasSearch || hasAuthor || hasCategory || hasSort) {
+      container.style.display = "none";
+      return;
+    }
+
+    const periods = ["day", "week", "month", "6months", "year", "all"];
+    const periodBadgeKeys = {
+      day: "gb_best_badge_day",
+      week: "gb_best_badge_week",
+      month: "gb_best_badge_month",
+      "6months": "gb_best_badge_6months",
+      year: "gb_best_badge_year",
+      all: "gb_best_badge_all"
+    };
+
+    const periodLabelKeys = {
+      day: "gb_best_period_day",
+      week: "gb_best_period_week",
+      month: "gb_best_period_month",
+      "6months": "gb_best_period_6months",
+      year: "gb_best_period_year",
+      all: "gb_best_period_all"
+    };
+
+    const bestMods = await loadBestShowcaseMods();
+    if (!bestMods) {
+      container.style.display = "none";
+      return;
+    }
+
+    const hasAnyMod = periods.some((p) => bestMods[p]);
+    if (!hasAnyMod) {
+      container.style.display = "none";
+      return;
+    }
+
+    container.style.display = "flex";
+
+    const widgetEl = container.querySelector(".gb-featured-widget");
+    const heroEl = document.getElementById("gb-featured-hero");
+    let activeBgSlot = 1;
+    const bgImg1 = document.getElementById("gb-featured-bg-1");
+    const bgImg2 = document.getElementById("gb-featured-bg-2");
+    const periodBadge = document.getElementById("gb-featured-period-badge");
+    const catBadge = document.getElementById("gb-featured-cat-badge");
+    const authorEl = document.getElementById("gb-featured-author");
+    const authorAvatar = document.getElementById("gb-featured-author-avatar");
+    const authorName = document.getElementById("gb-featured-author-name");
+    const titleEl = document.getElementById("gb-featured-name");
+    const descEl = document.getElementById("gb-featured-desc");
+    const likesEl = document.getElementById("gb-featured-likes");
+    const commentsEl = document.getElementById("gb-featured-comments");
+    const viewsEl = document.getElementById("gb-featured-views");
+    const thumbsBar = document.getElementById("gb-featured-thumbs-bar");
+    const prevBtn = document.getElementById("gb-featured-prev");
+    const nextBtn = document.getElementById("gb-featured-next");
+
+    const stepPeriod = (step) => {
+      const availablePeriods = periods.filter((p) => bestMods && bestMods[p]);
+      if (availablePeriods.length <= 1) return;
+      let idx = availablePeriods.indexOf(currentFeaturedPeriod);
+      if (idx === -1) idx = 0;
+      const nextIdx = (idx + step + availablePeriods.length) % availablePeriods.length;
+      updateDisplayForPeriod(availablePeriods[nextIdx], step >= 0 ? "next" : "prev");
+    };
+
+    const updateDisplayForPeriod = (periodKey, direction = "next") => {
+      currentFeaturedPeriod = periodKey;
+      const mod = bestMods[periodKey];
+      if (!mod) return;
+
+      if (thumbsBar) {
+        thumbsBar.querySelectorAll(".gb-featured-strip-item").forEach((tab) => {
+          const isActive = tab.getAttribute("data-period") === periodKey;
+          tab.classList.toggle("active", isActive);
+          const bar = tab.querySelector(".strip-progress-bar");
+          if (bar) {
+            bar.style.animation = "none";
+            void bar.offsetWidth;
+            if (isActive) {
+              bar.style.animation = "";
+            }
+          }
+        });
+      }
+
+      if (periodBadge) {
+        const badgeKey = periodBadgeKeys[periodKey];
+        periodBadge.textContent = t(badgeKey);
+      }
+
+      const catName =
+        mod._aRootCategory?._sName ||
+        mod._aCategory?._sName ||
+        mod._aSubCategory?._sName ||
+        "";
+
+      const sub = mod._aSubmitter;
+      if (authorEl && sub && sub._sName) {
+        authorEl.style.display = "inline-flex";
+        if (authorAvatar) authorAvatar.src = sub._sAvatarUrl || "icons/cat.jpg";
+        if (authorName) authorName.textContent = sub._sName;
+        authorEl.onclick = (e) => {
+          e.stopPropagation();
+          shell.openExternal(sub._sProfileUrl || `https://gamebanana.com/members/${sub._idRow}`);
+        };
+      } else if (authorEl) {
+        authorEl.style.display = "none";
+      }
+
+      const isNext = direction === "next";
+      const infoCol = heroEl ? heroEl.querySelector(".gb-featured-info-col") : null;
+      if (infoCol) {
+        const animClass = isNext ? "animating-right" : "animating-left";
+        infoCol.classList.remove("animating-left", "animating-right");
+        infoCol.classList.add(animClass);
+        setTimeout(() => {
+          if (titleEl) titleEl.textContent = mod._sName || "";
+          if (descEl) {
+            const descText = (mod._sDescription || "").trim();
+            descEl.textContent = descText;
+            descEl.style.display = descText ? "block" : "none";
+          }
+          if (catBadge) {
+            if (catName) {
+              catBadge.textContent = catName;
+              catBadge.style.display = "inline-block";
+            } else {
+              catBadge.style.display = "none";
+            }
+          }
+          infoCol.classList.remove(animClass);
+        }, 110);
+      } else {
+        if (titleEl) titleEl.textContent = mod._sName || "";
+        if (descEl) {
+          const descText = (mod._sDescription || "").trim();
+          descEl.textContent = descText;
+          descEl.style.display = descText ? "block" : "none";
+        }
+        if (catBadge) {
+          if (catName) {
+            catBadge.textContent = catName;
+            catBadge.style.display = "inline-block";
+          } else {
+            catBadge.style.display = "none";
+          }
+        }
+      }
+
+      if (likesEl) {
+        const span = likesEl.querySelector(".val");
+        if (span) span.textContent = abbreviateCount(mod._nLikeCount ?? 0);
+      }
+      if (commentsEl) {
+        const span = commentsEl.querySelector(".val");
+        if (span) span.textContent = abbreviateCount(mod._nPostCount ?? 0);
+      }
+      if (viewsEl) {
+        const span = viewsEl.querySelector(".val");
+        if (span) span.textContent = abbreviateCount(mod._nViewCount ?? 0);
+      }
+
+      let imgUrl = "icons/cat.jpg";
+      if (mod._aPreviewMedia && Array.isArray(mod._aPreviewMedia._aImages) && mod._aPreviewMedia._aImages[0]) {
+        const first = mod._aPreviewMedia._aImages[0];
+        imgUrl = first._sBaseUrl + "/" + (first._sFile530 || first._sFile || "");
+      }
+
+      const isNsfwMod = isModNsfw(mod);
+      const filterMode = currentSettings.nsfwMode || "show";
+      const filterStyle = isNsfwMod && (filterMode === "blur" || filterMode === "blur_download_only") ? "blur(20px)" : "none";
+
+      if (bgImg1 && bgImg2) {
+        const currentSlot = activeBgSlot;
+        const nextSlot = currentSlot === 1 ? 2 : 1;
+        const currentImg = currentSlot === 1 ? bgImg1 : bgImg2;
+        const nextImg = nextSlot === 1 ? bgImg1 : bgImg2;
+
+        nextImg.onerror = () => {
+          nextImg.onerror = null;
+          nextImg.src = "icons/cat.jpg";
+        };
+        nextImg.src = imgUrl;
+        nextImg.style.filter = filterStyle;
+
+        const enterClass = isNext ? "enter-from-right" : "enter-from-left";
+        const exitClass = isNext ? "exit-to-left" : "exit-to-right";
+
+        nextImg.className = `gb-featured-bg-slide ${enterClass}`;
+        void nextImg.offsetWidth;
+        nextImg.className = "gb-featured-bg-slide active";
+        currentImg.className = `gb-featured-bg-slide ${exitClass}`;
+        activeBgSlot = nextSlot;
+      } else if (bgImg1) {
+        bgImg1.src = imgUrl;
+        bgImg1.style.filter = filterStyle;
+      }
+
+      if (heroEl) {
+        heroEl.onclick = () => {
+          openGBModal(mod);
+        };
+      }
+    };
+
+    if (thumbsBar) {
+      thumbsBar.innerHTML = "";
+      periods.forEach((pKey) => {
+        const mod = bestMods[pKey];
+        if (!mod) return;
+
+        let thumbImg = "icons/cat.jpg";
+        if (mod._aPreviewMedia && Array.isArray(mod._aPreviewMedia._aImages) && mod._aPreviewMedia._aImages[0]) {
+          const first = mod._aPreviewMedia._aImages[0];
+          thumbImg = first._sBaseUrl + "/" + (first._sFile100 || first._sFile220 || first._sFile || "");
+        }
+
+        const thumb = document.createElement("div");
+        thumb.className = `gb-featured-strip-item ${pKey === currentFeaturedPeriod ? "active" : ""}`;
+        thumb.setAttribute("data-period", pKey);
+        thumb.innerHTML = `
+          <img src="${thumbImg}" alt="" loading="lazy" decoding="async">
+          <div class="strip-item-overlay"></div>
+          <span class="strip-item-label">${t(periodLabelKeys[pKey])}</span>
+          <div class="strip-progress-bar"></div>
+        `;
+        const img = thumb.querySelector("img");
+        if (img) {
+          img.onerror = () => {
+            img.onerror = null;
+            img.src = "icons/cat.jpg";
+          };
+        }
+        const bar = thumb.querySelector(".strip-progress-bar");
+        if (bar) {
+          bar.addEventListener("animationend", () => {
+            if (thumb.classList.contains("active")) {
+              stepPeriod(1);
+            }
+          });
+        }
+        thumb.onclick = (e) => {
+          e.stopPropagation();
+          const curIdx = periods.indexOf(currentFeaturedPeriod);
+          const targetIdx = periods.indexOf(pKey);
+          updateDisplayForPeriod(pKey, targetIdx >= curIdx ? "next" : "prev");
+        };
+        thumbsBar.appendChild(thumb);
+      });
+    }
+
+    if (prevBtn) {
+      prevBtn.onclick = (e) => {
+        e.stopPropagation();
+        stepPeriod(-1);
+      };
+    }
+
+    if (nextBtn) {
+      nextBtn.onclick = (e) => {
+        e.stopPropagation();
+        stepPeriod(1);
+      };
+    }
+
+    updateDisplayForPeriod(currentFeaturedPeriod || "all", "next");
+  };
+
   const splashEl = document.getElementById("splash-screen");
   if (typeof SplashManager !== "undefined" && SplashManager.init) {
     SplashManager.init(splashEl);
@@ -462,10 +976,14 @@ document.addEventListener("DOMContentLoaded", () => {
     SplashManager.setProgress(20, t("splash_status_check_updates"));
   }
 
+  preloadDownloadTab();
+
   let gbIdleTimer = null;
   let activeGBModalController = null;
   let activeGBModalId = 0;
   const gbItemDataCache = new Map();
+  const gbProfileCache = new Map();
+  const gbCommentsCache = new Map();
 
   const openLightbox = (imgSrc) => {
     if (!imgSrc) return;
@@ -719,13 +1237,112 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeof CustomDropdown !== "undefined") {
         CustomDropdown.initAll(contentContainer);
       }
+
+      const gpMgr = window.GamepadManager || window.ControllerManager;
+      if (gpMgr && gpMgr.controllerMode) {
+        setTimeout(() => {
+          gpMgr.focusDefaultElement();
+        }, 60);
+      }
     } catch (error) {
       contentContainer.innerHTML = `<h2 style="color: var(--color-red);">${t('err_page_load')}</h2>`;
     }
   };
 
+  function detectLaunchLanguage() {
+    const argv = process.argv || [];
+    for (let i = 0; i < argv.length; i++) {
+      const arg = (argv[i] || "").toLowerCase();
+      if (arg.startsWith("--lang=") || arg.startsWith("--language=")) {
+        const val = arg.split("=")[1];
+        if (val === "ru" || val === "en") return val;
+      }
+      if ((arg === "--lang" || arg === "--language") && i + 1 < argv.length) {
+        const next = (argv[i + 1] || "").toLowerCase();
+        if (next === "ru" || next === "en") return next;
+      }
+    }
+    if (process.env.WZMM_LANG) {
+      const val = process.env.WZMM_LANG.toLowerCase();
+      if (val === "ru" || val === "en") return val;
+    }
+    const env = (
+      process.env.WZMM_SYSTEM_LOCALE ||
+      process.env.LANGUAGE ||
+      process.env.LC_ALL ||
+      process.env.LC_MESSAGES ||
+      process.env.LANG ||
+      navigator.language ||
+      ""
+    ).toLowerCase();
+    if (env.startsWith("ru") || env.includes("ru_ru") || env.includes("ru-ru")) {
+      return "ru";
+    }
+    return "en";
+  }
+
   function getSettings() {
-    const defaultSettings = { nsfwMode: "show", language: "en", theme: "purple" };
+    const defaultUsefulMods = [
+      {
+        id: 600543,
+        _idRow: 600543,
+        name: "Agent Viewer",
+        _sName: "Agent Viewer",
+        description: "Allows viewing agents in the menu",
+        _sDescription: "Allows viewing agents in the menu",
+        _sText: "Allows viewing agents in the menu",
+        previewUrl: "https://images.gamebanana.com/img/ss/mods/530-90_684dadce18810.jpg",
+        _sPreviewUrl: "https://images.gamebanana.com/img/ss/mods/530-90_684dadce18810.jpg",
+        _sProfileUrl: "https://gamebanana.com/mods/600543",
+        author: "HelpMeHelpYou",
+        submitterName: "HelpMeHelpYou",
+      },
+      {
+        id: 527935,
+        _idRow: 527935,
+        name: "Censor Remover & No Outlines",
+        _sName: "Censor Remover & No Outlines",
+        description: "Censor Remover & No Outlines options",
+        _sDescription: "Censor Remover & No Outlines options",
+        _sText: "Censor Remover & No Outlines options",
+        previewUrl: "https://images.gamebanana.com/img/ss/mods/530-90_6693f0120d40f.jpg",
+        _sPreviewUrl: "https://images.gamebanana.com/img/ss/mods/530-90_6693f0120d40f.jpg",
+        _sProfileUrl: "https://gamebanana.com/mods/527935",
+        author: "summersby",
+        submitterName: "summersby",
+      },
+      {
+        id: 529789,
+        _idRow: 529789,
+        name: "Color Wipeout",
+        _sName: "Color Wipeout",
+        description: "Makes Wipeout colorful",
+        _sDescription: "Makes Wipeout colorful",
+        _sText: "Makes Wipeout colorful",
+        previewUrl: "https://images.gamebanana.com/img/ss/mods/530-90_680a3a2e84fc8.jpg",
+        _sPreviewUrl: "https://images.gamebanana.com/img/ss/mods/530-90_680a3a2e84fc8.jpg",
+        _sProfileUrl: "https://gamebanana.com/mods/529789",
+        author: "summersby",
+        submitterName: "summersby",
+      },
+      {
+        id: 645291,
+        _idRow: 645291,
+        name: "Compact Damage",
+        _sName: "Compact Damage",
+        description: "Mod for changing damage visualization",
+        _sDescription: "Mod for changing damage visualization",
+        _sText: "Mod for changing damage visualization",
+        previewUrl: "https://images.gamebanana.com/img/ss/mods/530-90_6961eba172fb9.jpg",
+        _sPreviewUrl: "https://images.gamebanana.com/img/ss/mods/530-90_6961eba172fb9.jpg",
+        _sProfileUrl: "https://gamebanana.com/mods/645291",
+        author: "Unicornshell",
+        submitterName: "Unicornshell",
+      }
+    ];
+
+    const detectedLang = detectLaunchLanguage();
+    const defaultSettings = { nsfwMode: "show", language: detectedLang, theme: "amber", favoriteAuthors: [], usefulMods: defaultUsefulMods };
 
     if (!fs.existsSync(settingsFilePath)) {
       fs.writeFileSync(
@@ -738,11 +1355,89 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       let settings = JSON.parse(fs.readFileSync(settingsFilePath, "utf-8"));
 
-      if (settings.language !== "ru" && settings.language !== "en") {
-        settings.language = "en";
+      let explicitLaunchLang = null;
+      const argv = process.argv || [];
+      for (let i = 0; i < argv.length; i++) {
+        const arg = (argv[i] || "").toLowerCase();
+        if (arg.startsWith("--lang=") || arg.startsWith("--language=")) {
+          const val = arg.split("=")[1];
+          if (val === "ru" || val === "en") explicitLaunchLang = val;
+        }
+        if ((arg === "--lang" || arg === "--language") && i + 1 < argv.length) {
+          const next = (argv[i + 1] || "").toLowerCase();
+          if (next === "ru" || next === "en") explicitLaunchLang = next;
+        }
+      }
+      if (process.env.WZMM_LANG && (process.env.WZMM_LANG === "ru" || process.env.WZMM_LANG === "en")) {
+        explicitLaunchLang = process.env.WZMM_LANG;
       }
 
-      settings.theme = mapLegacyTheme(settings.theme || "purple");
+      if (explicitLaunchLang) {
+        settings.language = explicitLaunchLang;
+      } else if (!settings.language || (settings.language !== "ru" && settings.language !== "en")) {
+        settings.language = detectedLang;
+      }
+
+      settings.theme = mapLegacyTheme(settings.theme || "amber");
+
+      if (!Array.isArray(settings.favoriteAuthors)) {
+        settings.favoriteAuthors = [];
+      }
+
+      if (!Array.isArray(settings.usefulMods) || settings.usefulMods.length === 0) {
+        settings.usefulMods = defaultUsefulMods;
+      } else {
+        defaultUsefulMods.forEach((defMod) => {
+          const exists = settings.usefulMods.some((m) => (m.id === defMod.id || m._idRow === defMod.id));
+          if (!exists) {
+            settings.usefulMods.push(defMod);
+          }
+        });
+        settings.usefulMods.forEach((m) => {
+          if (m && (m.id === 527935 || m._idRow === 527935)) {
+            m.name = "Censor Remover & No Outlines";
+            m._sName = "Censor Remover & No Outlines";
+            m.description = "Censor Remover & No Outlines options";
+            m._sDescription = "Censor Remover & No Outlines options";
+            m._sText = "Censor Remover & No Outlines options";
+            m.previewUrl = "https://images.gamebanana.com/img/ss/mods/530-90_6693f0120d40f.jpg";
+            m._sPreviewUrl = "https://images.gamebanana.com/img/ss/mods/530-90_6693f0120d40f.jpg";
+            m._sProfileUrl = "https://gamebanana.com/mods/527935";
+            m.author = "summersby";
+            m.submitterName = "summersby";
+          }
+          if (m && (m.id === 529789 || m._idRow === 529789)) {
+            m.previewUrl = "https://images.gamebanana.com/img/ss/mods/530-90_680a3a2e84fc8.jpg";
+            m._sPreviewUrl = "https://images.gamebanana.com/img/ss/mods/530-90_680a3a2e84fc8.jpg";
+            m.author = "summersby";
+            m.submitterName = "summersby";
+          }
+          if (m && (m.id === 600543 || m._idRow === 600543)) {
+            m.name = "Agent Viewer";
+            m._sName = "Agent Viewer";
+            m.description = "Allows viewing agents in the menu";
+            m._sDescription = "Allows viewing agents in the menu";
+            m._sText = "Allows viewing agents in the menu";
+            m.previewUrl = "https://images.gamebanana.com/img/ss/mods/530-90_684dadce18810.jpg";
+            m._sPreviewUrl = "https://images.gamebanana.com/img/ss/mods/530-90_684dadce18810.jpg";
+            m._sProfileUrl = "https://gamebanana.com/mods/600543";
+            m.author = "HelpMeHelpYou";
+            m.submitterName = "HelpMeHelpYou";
+          }
+          if (m && (m.id === 645291 || m._idRow === 645291)) {
+            m.name = "Compact Damage";
+            m._sName = "Compact Damage";
+            m.description = "Mod for changing damage visualization";
+            m._sDescription = "Mod for changing damage visualization";
+            m._sText = "Mod for changing damage visualization";
+            m.previewUrl = "https://images.gamebanana.com/img/ss/mods/530-90_6961eba172fb9.jpg";
+            m._sPreviewUrl = "https://images.gamebanana.com/img/ss/mods/530-90_6961eba172fb9.jpg";
+            m._sProfileUrl = "https://gamebanana.com/mods/645291";
+            m.author = "Unicornshell";
+            m.submitterName = "Unicornshell";
+          }
+        });
+      }
 
       return settings;
     } catch (e) {
@@ -823,6 +1518,161 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 150);
       };
     }
+
+    const bulkWrapper = document.getElementById("bulk-actions-wrapper");
+    const bulkBtn = document.getElementById("btn-bulk-actions");
+    const bulkEnableAll = document.getElementById("bulk-enable-all");
+    const bulkDisableAll = document.getElementById("bulk-disable-all");
+    const bulkEnableFiltered = document.getElementById("bulk-enable-filtered");
+    const bulkDisableFiltered = document.getElementById("bulk-disable-filtered");
+
+    if (bulkBtn && bulkWrapper) {
+      bulkBtn.onclick = (e) => {
+        e.stopPropagation();
+        bulkWrapper.classList.toggle("open");
+      };
+
+      const closeBulkMenu = () => {
+        bulkWrapper.classList.remove("open");
+      };
+
+      document.addEventListener("click", (e) => {
+        if (!bulkWrapper.contains(e.target)) {
+          closeBulkMenu();
+        }
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && bulkWrapper.classList.contains("open")) {
+          closeBulkMenu();
+        }
+      });
+
+      if (bulkEnableAll) {
+        bulkEnableAll.onclick = (e) => {
+          e.stopPropagation();
+          closeBulkMenu();
+          const { validPath, mods } = modManager.getMods(
+            currentSettings.xxmiPath,
+            "all",
+            "",
+            "all",
+            currentSettings.language || "ru",
+            currentSettings.usefulMods || []
+          );
+          if (!validPath || !mods || mods.length === 0) {
+            if (window.Toast) window.Toast.info(t('installed_bulk_no_mods'));
+            return;
+          }
+          let affectedCount = 0;
+          for (const mod of mods) {
+            if (!mod.active) {
+              if (modManager.toggleMod(currentSettings.xxmiPath, mod.name, false)) {
+                affectedCount++;
+              }
+            }
+          }
+          if (affectedCount > 0) {
+            if (window.Toast) window.Toast.success(t('installed_all_enabled_toast', { count: affectedCount }));
+          }
+          renderModsGrid();
+        };
+      }
+
+      if (bulkDisableAll) {
+        bulkDisableAll.onclick = (e) => {
+          e.stopPropagation();
+          closeBulkMenu();
+          const { validPath, mods } = modManager.getMods(
+            currentSettings.xxmiPath,
+            "all",
+            "",
+            "all",
+            currentSettings.language || "ru",
+            currentSettings.usefulMods || []
+          );
+          if (!validPath || !mods || mods.length === 0) {
+            if (window.Toast) window.Toast.info(t('installed_bulk_no_mods'));
+            return;
+          }
+          let affectedCount = 0;
+          for (const mod of mods) {
+            if (mod.active) {
+              if (modManager.toggleMod(currentSettings.xxmiPath, mod.name, true)) {
+                affectedCount++;
+              }
+            }
+          }
+          if (affectedCount > 0) {
+            if (window.Toast) window.Toast.info(t('installed_all_disabled_toast', { count: affectedCount }));
+          }
+          renderModsGrid();
+        };
+      }
+
+      if (bulkEnableFiltered) {
+        bulkEnableFiltered.onclick = (e) => {
+          e.stopPropagation();
+          closeBulkMenu();
+          const { validPath, mods } = modManager.getMods(
+            currentSettings.xxmiPath,
+            currentModFilter,
+            currentSearchQuery,
+            currentCharacterFilter,
+            currentSettings.language || "ru",
+            currentSettings.usefulMods || []
+          );
+          if (!validPath || !mods || mods.length === 0) {
+            if (window.Toast) window.Toast.info(t('installed_bulk_no_mods'));
+            return;
+          }
+          let affectedCount = 0;
+          for (const mod of mods) {
+            if (!mod.active) {
+              if (modManager.toggleMod(currentSettings.xxmiPath, mod.name, false)) {
+                affectedCount++;
+              }
+            }
+          }
+          if (affectedCount > 0) {
+            if (window.Toast) window.Toast.success(t('installed_all_enabled_toast', { count: affectedCount }));
+          }
+          renderModsGrid();
+        };
+      }
+
+      if (bulkDisableFiltered) {
+        bulkDisableFiltered.onclick = (e) => {
+          e.stopPropagation();
+          closeBulkMenu();
+          const { validPath, mods } = modManager.getMods(
+            currentSettings.xxmiPath,
+            currentModFilter,
+            currentSearchQuery,
+            currentCharacterFilter,
+            currentSettings.language || "ru",
+            currentSettings.usefulMods || []
+          );
+          if (!validPath || !mods || mods.length === 0) {
+            if (window.Toast) window.Toast.info(t('installed_bulk_no_mods'));
+            return;
+          }
+          let affectedCount = 0;
+          for (const mod of mods) {
+            if (mod.active) {
+              if (modManager.toggleMod(currentSettings.xxmiPath, mod.name, true)) {
+                affectedCount++;
+              }
+            }
+          }
+          if (affectedCount > 0) {
+            if (window.Toast) window.Toast.info(t('installed_all_disabled_toast', { count: affectedCount }));
+          }
+          renderModsGrid();
+        };
+      }
+    }
+
     renderModsGrid();
     initModalLogic();
     initGroupDrawerLogic();
@@ -1053,7 +1903,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (btnSelectAll) {
       btnSelectAll.onclick = () => {
-        const { mods } = modManager.getMods(currentSettings.xxmiPath, "all", "");
+        const { mods } = modManager.getMods(currentSettings.xxmiPath, "all", "", "all", currentSettings.language || "ru", currentSettings.usefulMods || []);
         mods.forEach(m => selectedModsForGroup.add(m.name));
         updateGroupSelectionUI();
         renderModsGrid();
@@ -1113,10 +1963,28 @@ document.addEventListener("DOMContentLoaded", () => {
       currentSearchQuery,
       currentCharacterFilter,
       currentSettings.language || "ru",
+      currentSettings.usefulMods || [],
     );
 
     if (installedFilterDrawer) {
       installedFilterDrawer.setCharacters(characters);
+    }
+
+    const bulkFilteredDivider = document.getElementById("bulk-filtered-divider");
+    const bulkEnableFiltered = document.getElementById("bulk-enable-filtered");
+    const bulkDisableFiltered = document.getElementById("bulk-disable-filtered");
+    const isFiltered = currentCharacterFilter !== "all" || (currentSearchQuery && currentSearchQuery.trim() !== "") || currentModFilter !== "all";
+
+    if (bulkFilteredDivider && bulkEnableFiltered && bulkDisableFiltered) {
+      if (isFiltered && mods.length > 0) {
+        bulkFilteredDivider.style.display = "block";
+        bulkEnableFiltered.style.display = "flex";
+        bulkDisableFiltered.style.display = "flex";
+      } else {
+        bulkFilteredDivider.style.display = "none";
+        bulkEnableFiltered.style.display = "none";
+        bulkDisableFiltered.style.display = "none";
+      }
     }
 
     if (!validPath || totalCount === 0) {
@@ -1336,12 +2204,188 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!modal) return;
     const modIdentifier = mod.name;
     document.getElementById("modal-title").textContent = mod.name;
-    document.getElementById("modal-status").textContent = mod.active
-      ? t('mod_status_on')
-      : t('mod_status_off');
-    document.getElementById("modal-status").style.color = mod.active
-      ? "#4CAF50"
-      : "#f44336";
+    
+    const statusBtn = document.getElementById("modal-status");
+    const statusText = document.getElementById("modal-status-text") || statusBtn;
+    const updateModalStatus = () => {
+      if (!statusBtn) return;
+      if (mod.active) {
+        statusBtn.className = "modal-status-badge active";
+        statusBtn.title = t("mod_turn_off");
+        if (statusText) statusText.textContent = t("mod_status_on");
+      } else {
+        statusBtn.className = "modal-status-badge inactive";
+        statusBtn.title = t("mod_turn_on");
+        if (statusText) statusText.textContent = t("mod_status_off");
+      }
+    };
+    updateModalStatus();
+
+    if (statusBtn) {
+      statusBtn.onclick = (e) => {
+        e.stopPropagation();
+        const success = modManager.toggleMod(
+          currentSettings.xxmiPath,
+          modIdentifier,
+          mod.active
+        );
+        if (success) {
+          mod.active = !mod.active;
+          updateModalStatus();
+          renderModsGrid();
+        } else {
+          if (window.Toast) window.Toast.error(t("mod_move_err"));
+          else alert(t("mod_move_err"));
+        }
+      };
+    }
+
+    const open3dBtn = document.getElementById("modal-open-3d-btn");
+    if (open3dBtn) {
+      open3dBtn.onclick = async () => {
+        const scoreModCandidate = (dir) => {
+          try {
+            if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return -1;
+            let score = 0;
+            const scanDir = (current, depth) => {
+              if (depth > 2) return;
+              const entries = fs.readdirSync(current, { withFileTypes: true });
+              for (const ent of entries) {
+                const full = path.join(current, ent.name);
+                if (ent.isDirectory()) {
+                  scanDir(full, depth + 1);
+                } else if (ent.isFile()) {
+                  const lower = ent.name.toLowerCase();
+                  if (lower.endsWith(".buf") || lower.endsWith(".ib")) {
+                    score += 50;
+                  } else if (lower.endsWith(".ini")) {
+                    if (lower.startsWith("disabled")) {
+                      score += 15;
+                    } else if (lower.includes("noise") || lower.includes("cos") || lower.includes("sin") || lower.includes("rnd") || lower.includes("frame_animation")) {
+                      score += 1;
+                    } else {
+                      score += 30;
+                    }
+                  }
+                }
+              }
+            };
+            scanDir(dir, 0);
+            return score;
+          } catch (_) {
+            return -1;
+          }
+        };
+
+        let targetPath = null;
+        const candidates = [];
+        if (currentSettings && currentSettings.xxmiPath) {
+          const xxmi = currentSettings.xxmiPath;
+          if (mod.activeVariation) {
+            candidates.push(path.join(xxmi, "modvars", mod.name, mod.activeVariation));
+            candidates.push(path.join(xxmi, "Mods", mod.name, mod.activeVariation));
+            candidates.push(path.join(xxmi, "dismods", mod.name, mod.activeVariation));
+          }
+          candidates.push(path.join(xxmi, "modvars", mod.name));
+          candidates.push(path.join(xxmi, "Mods", mod.name));
+          candidates.push(path.join(xxmi, "dismods", mod.name));
+        }
+        if (mod.paths && Array.isArray(mod.paths)) {
+          for (const p of mod.paths) {
+            if (!p) continue;
+            if (mod.activeVariation) candidates.push(path.join(p, mod.activeVariation));
+            candidates.push(p);
+          }
+        }
+
+        let bestScore = -1;
+        for (const c of candidates) {
+          const s = scoreModCandidate(c);
+          if (s > bestScore) {
+            bestScore = s;
+            targetPath = c;
+          }
+        }
+        if (!targetPath || bestScore <= 0) {
+          for (const c of candidates) {
+            if (fs.existsSync(c)) {
+              targetPath = c;
+              break;
+            }
+          }
+        }
+
+        let disabledIni = false;
+        if (targetPath) {
+          try {
+            const checkDisabled = (dir, depth) => {
+              if (depth > 2) return false;
+              const fList = fs.readdirSync(dir, { withFileTypes: true });
+              const inis = fList.filter(f => f.isFile() && f.name.toLowerCase().endsWith(".ini"));
+              if (inis.length > 0 && inis.every(f => f.name.toLowerCase().startsWith("disabled"))) {
+                return true;
+              }
+              for (const f of fList) {
+                if (f.isDirectory() && checkDisabled(path.join(dir, f.name), depth + 1)) {
+                  return true;
+                }
+              }
+              return false;
+            };
+            disabledIni = checkDisabled(targetPath, 0);
+          } catch (_) {}
+        }
+
+        try {
+          const { ipcRenderer } = require("electron");
+          await ipcRenderer.invoke("open-3d-viewer", {
+            modPath: targetPath,
+            theme: currentSettings.theme,
+            lang: currentSettings.language,
+            disabledIni
+          });
+        } catch (e) {
+          const { spawn } = require("child_process");
+          const { isLinux } = require("./js/platform");
+          let mvDir = path.join(__dirname, "modelviewer");
+          if (mvDir.includes("app.asar")) {
+            const unpacked = mvDir.replace("app.asar", "app.asar.unpacked");
+            if (fs.existsSync(unpacked)) mvDir = unpacked;
+          }
+          const runScript = isLinux ? path.join(mvDir, "run.sh") : path.join(mvDir, "run.bat");
+          const spawnArgs = [];
+          if (targetPath) spawnArgs.push(targetPath);
+          if (disabledIni) spawnArgs.push("--disabled-ini");
+          if (currentSettings && currentSettings.theme) spawnArgs.push("--theme", currentSettings.theme);
+          if (currentSettings && currentSettings.language) spawnArgs.push("--lang", currentSettings.language);
+          const spawnCmd = isLinux ? "/bin/bash" : (process.env.ComSpec || path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe"));
+          const finalArgs = isLinux ? [runScript, ...spawnArgs] : ["/c", runScript, ...spawnArgs];
+          const child = spawn(spawnCmd, finalArgs, {
+            cwd: mvDir,
+            detached: true,
+            stdio: "ignore",
+            windowsHide: true,
+            env: {
+              ...process.env,
+              WZMM_THEME: (currentSettings && currentSettings.theme) || "amber",
+              WZMM_LANG: (currentSettings && currentSettings.language) || "en"
+            }
+          });
+          child.unref();
+        }
+      };
+    }
+
+    const authorRow = document.getElementById("modal-author-row");
+    const authorVal = document.getElementById("modal-author-val");
+    if (authorRow && authorVal) {
+      if (mod.author) {
+        authorRow.style.display = "flex";
+        authorVal.textContent = mod.author;
+      } else {
+        authorRow.style.display = "none";
+      }
+    }
 
     const charRow = document.getElementById("modal-char-row");
     const charBadge = document.getElementById("modal-char-badge");
@@ -1484,7 +2528,7 @@ document.addEventListener("DOMContentLoaded", () => {
           .replace(/"/g, "%22");
         imgContainer.innerHTML = `
           ${nsfwBadgeHtml}
-          <img src="${safeUrl}" alt="${mod.name}" style="cursor: pointer;" title="Нажмите для открытия в полный размер">
+          <img src="${safeUrl}" alt="${mod.name}" loading="lazy" decoding="async" style="cursor: pointer;" title="Нажмите для открытия в полный размер">
         `;
         const imgEl = imgContainer.querySelector("img");
         if (imgEl) {
@@ -1676,7 +2720,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const checkbox = item.querySelector(".var-sub-checkbox");
 
           item.addEventListener("click", (e) => {
-            if (e.target !== checkbox) {
+            if (e.target !== checkbox && !e.target.closest(".var-checkbox-label")) {
               checkbox.checked = !checkbox.checked;
             }
 
@@ -1760,7 +2804,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
           item.addEventListener("click", (e) => {
             if (e.target.closest(".btn-var-delete")) return;
-            if (e.target !== checkbox) {
+            if (e.target !== checkbox && !e.target.closest(".var-checkbox-label")) {
               checkbox.checked = !checkbox.checked;
             }
 
@@ -2267,8 +3311,53 @@ document.addEventListener("DOMContentLoaded", () => {
   let gbSearchQuery = "";
   let gbSortVal = "default";
   let gbAbortController = null;
+  let gbSelectedAuthor = null;
 
   let sideMenuDownload = null;
+
+  const isFavoriteAuthor = (authorId, authorName) => {
+    if (!currentSettings.favoriteAuthors || !Array.isArray(currentSettings.favoriteAuthors)) {
+      currentSettings.favoriteAuthors = [];
+      return false;
+    }
+    return currentSettings.favoriteAuthors.some(
+      (a) => (authorId && a.id === authorId) || (authorName && a.name === authorName)
+    );
+  };
+
+  const saveFavoriteAuthors = () => {
+    try {
+      fs.writeFileSync(settingsFilePath, JSON.stringify(currentSettings, null, 2), "utf-8");
+    } catch (e) { }
+  };
+
+  const toggleFavoriteAuthor = (authorObj) => {
+    if (!authorObj || (!authorObj.id && !authorObj.name)) return;
+    if (!currentSettings.favoriteAuthors || !Array.isArray(currentSettings.favoriteAuthors)) {
+      currentSettings.favoriteAuthors = [];
+    }
+    const idx = currentSettings.favoriteAuthors.findIndex(
+      (a) => (authorObj.id && a.id === authorObj.id) || (authorObj.name && a.name === authorObj.name)
+    );
+    if (idx >= 0) {
+      currentSettings.favoriteAuthors.splice(idx, 1);
+      if (gbSelectedAuthor && ((authorObj.id && gbSelectedAuthor.id === authorObj.id) || (authorObj.name && gbSelectedAuthor.name === authorObj.name))) {
+        gbSelectedAuthor = null;
+        updateActiveFilterUI();
+        fetchGBMods(false);
+      }
+    } else {
+      currentSettings.favoriteAuthors.push({
+        id: authorObj.id,
+        name: authorObj.name,
+        avatar: authorObj.avatar || "icons/cat.jpg"
+      });
+    }
+    saveFavoriteAuthors();
+    if (sideMenuDownload) {
+      sideMenuDownload.setFavoriteAuthors(currentSettings.favoriteAuthors);
+    }
+  };
 
   const initGameBananaCatalog = () => {
     const sortSelect = document.getElementById("gb-sort");
@@ -2278,6 +3367,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const filterBtn = document.getElementById("gb-filter-btn");
 
     if (!grid) return;
+
+    renderFeaturedShowcase();
 
     if (sortSelect) {
       sortSelect.value = gbSortVal;
@@ -2291,36 +3382,74 @@ document.addEventListener("DOMContentLoaded", () => {
       const badge = document.getElementById("gb-filter-badge");
       const bar = document.getElementById("gb-active-filter-bar");
 
-      if (categoryId) {
-        if (btn) btn.classList.add("has-active-filter");
-        if (badge) {
-          badge.style.display = "inline-block";
-          badge.textContent = "1";
+      const catId = categoryId !== undefined ? categoryId : (sideMenuDownload ? sideMenuDownload.selectedCategoryId : null);
+      const catName = categoryName !== undefined ? categoryName : (sideMenuDownload ? (sideMenuDownload.selectedCategoryName || "") : "");
+
+      let activeCount = 0;
+      if (catId) activeCount++;
+      if (gbSelectedAuthor) activeCount++;
+
+      if (btn) {
+        if (activeCount > 0) {
+          btn.classList.add("has-active-filter");
+          if (badge) {
+            badge.style.display = "inline-block";
+            badge.textContent = activeCount.toString();
+          }
+        } else {
+          btn.classList.remove("has-active-filter");
+          if (badge) badge.style.display = "none";
         }
-        if (bar) {
+      }
+
+      if (bar) {
+        if (activeCount > 0) {
           bar.style.display = "flex";
-          bar.innerHTML = `
-            <div class="gb-filter-pill">
-              <span>${t('gb_active_filter_tag', { name: categoryName })}</span>
-              <button id="gb-clear-tag-btn" class="gb-filter-pill-btn" title="${t('gb_filter_reset')}">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              </button>
-            </div>
-          `;
+          let html = "";
+          if (gbSelectedAuthor) {
+            html += `
+              <div class="gb-filter-pill">
+                <span>${t('gb_author_filter_tag', { name: gbSelectedAuthor.name })}</span>
+                <button id="gb-clear-author-tag-btn" class="gb-filter-pill-btn" title="${t('gb_filter_reset')}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            `;
+          }
+          if (catId) {
+            html += `
+              <div class="gb-filter-pill">
+                <span>${t('gb_active_filter_tag', { name: catName })}</span>
+                <button id="gb-clear-tag-btn" class="gb-filter-pill-btn" title="${t('gb_filter_reset')}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            `;
+          }
+          bar.innerHTML = html;
+
           const clearTagBtn = document.getElementById("gb-clear-tag-btn");
           if (clearTagBtn) {
             clearTagBtn.onclick = () => {
               if (sideMenuDownload) sideMenuDownload.setCategory(null, null);
             };
           }
-        }
-      } else {
-        if (btn) btn.classList.remove("has-active-filter");
-        if (badge) badge.style.display = "none";
-        if (bar) {
+          const clearAuthorTagBtn = document.getElementById("gb-clear-author-tag-btn");
+          if (clearAuthorTagBtn) {
+            clearAuthorTagBtn.onclick = () => {
+              gbSelectedAuthor = null;
+              if (sideMenuDownload) sideMenuDownload.setAuthor(null);
+              updateActiveFilterUI();
+              fetchGBMods(false);
+            };
+          }
+        } else {
           bar.style.display = "none";
           bar.innerHTML = "";
         }
@@ -2337,6 +3466,9 @@ document.addEventListener("DOMContentLoaded", () => {
         gbSearchQuery = "";
         const sInput = document.getElementById("gb-search");
         if (sInput) sInput.value = "";
+      }
+      if (filters.author !== undefined) {
+        gbSelectedAuthor = filters.author;
       }
       updateActiveFilterUI(filters.categoryId, filters.categoryName);
       fetchGBMods(false);
@@ -2357,16 +3489,22 @@ document.addEventListener("DOMContentLoaded", () => {
         currentSort: gbSortVal,
         nsfwMode: currentSettings.nsfwMode || "hide",
         language: currentSettings.language || "ru",
+        favoriteAuthors: currentSettings.favoriteAuthors || [],
+        selectedAuthor: gbSelectedAuthor,
         t: (k, p) => t(k, p),
         onFilterChange: handleFilterChange,
-        onNsfwChange: handleNsfwChange
+        onNsfwChange: handleNsfwChange,
+        onToggleFavoriteAuthor: toggleFavoriteAuthor
       });
       sideMenuDownload.init();
     } else {
       sideMenuDownload.currentLang = currentSettings.language || "ru";
       sideMenuDownload.t = (k, p) => t(k, p);
+      sideMenuDownload.favoriteAuthors = currentSettings.favoriteAuthors || [];
+      sideMenuDownload.selectedAuthor = gbSelectedAuthor;
       sideMenuDownload.onFilterChange = handleFilterChange;
       sideMenuDownload.onNsfwChange = handleNsfwChange;
+      sideMenuDownload.onToggleFavoriteAuthor = toggleFavoriteAuthor;
       sideMenuDownload.render();
       updateActiveFilterUI(sideMenuDownload.selectedCategoryId, sideMenuDownload.selectedCategoryName);
     }
@@ -2393,23 +3531,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return subId === targetCatId || cId === targetCatId || rootId === targetCatId;
     };
 
-    const fetchWithRetry = async (url, options = {}, retries = 2, delay = 800) => {
-      for (let i = 0; i <= retries; i++) {
-        try {
-          const res = await fetch(url, options);
-          if (res.ok) return res;
-          if (i === retries) return res;
-        } catch (err) {
-          if (err.name === "AbortError" || (options.signal && options.signal.aborted)) {
-            throw err;
-          }
-          if (i === retries) throw err;
-        }
-        await new Promise((r) => setTimeout(r, delay * Math.pow(1.5, i)));
-      }
-    };
-
     const fetchGBMods = async (append = false) => {
+      if (!append) {
+        renderFeaturedShowcase();
+      }
       if (gbAbortController && !append) {
         gbAbortController.abort();
       }
@@ -2449,7 +3574,29 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         let records = [];
 
-        if (searchVal && selectedCatId) {
+        if (gbSelectedAuthor) {
+          const authorId = gbSelectedAuthor.id;
+          const url = `https://gamebanana.com/apiv11/Mod/Index?_nPage=${gbPage}&_nPerpage=30&_aFilters[Generic_Submitter]=${authorId}&_aFilters[Generic_Game]=19567&_sSort=${gbSort}&_csvProperties=${csvProps}`;
+          const res = await fetchWithRetry(url, { signal: currentSignal });
+          if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+          const data = await res.json();
+          if (currentSignal.aborted) return;
+          records = data._aRecords || [];
+          if (selectedCatId) {
+            records = records.filter((r) => matchesCategory(r, selectedCatId));
+          }
+          if (searchVal) {
+            const lowerQuery = searchVal.toLowerCase();
+            records = records.filter((m) => {
+              const inName = m._sName && m._sName.toLowerCase().includes(lowerQuery);
+              const inDesc = m._sDescription && m._sDescription.toLowerCase().includes(lowerQuery);
+              return inName || inDesc;
+            });
+            gbHasMore = false;
+          } else if (records.length < 30) {
+            gbHasMore = false;
+          }
+        } else if (searchVal && selectedCatId) {
           const isRootCat = (modManager.rootCategories || []).some((rc) => rc.id === selectedCatId);
           if (isRootCat) {
             const url = `https://gamebanana.com/apiv11/Util/Search/Results?_sModelName=Mod&_idGameRow=19567&_sSearchString=${encodeURIComponent(searchVal)}&_nPage=${gbPage}&_nPerpage=50&_csvProperties=${csvProps}`;
@@ -2511,11 +3658,18 @@ document.addEventListener("DOMContentLoaded", () => {
             url = `https://gamebanana.com/apiv11/Mod/Index?_nPage=${gbPage}&_nPerpage=30&_aFilters[Generic_Game]=19567&_sSort=${gbSort}&_csvProperties=${csvProps}`;
           }
 
-          const res = await fetchWithRetry(url, { signal: currentSignal });
-          if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-          const data = await res.json();
-          if (currentSignal.aborted) return;
-          records = data._aRecords || [];
+          if (!append && gbPage === 1 && !searchVal && !selectedCatId && gbSort === "Generic_MostLiked" && Array.isArray(gbInitialCatalogCache) && gbInitialCatalogCache.length > 0) {
+            records = gbInitialCatalogCache;
+          } else {
+            const res = await fetchWithRetry(url, { signal: currentSignal });
+            if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+            const data = await res.json();
+            if (currentSignal.aborted) return;
+            records = data._aRecords || [];
+            if (!append && gbPage === 1 && !searchVal && !selectedCatId && gbSort === "Generic_MostLiked") {
+              gbInitialCatalogCache = records;
+            }
+          }
           if (records.length < 30) gbHasMore = false;
         }
 
@@ -2563,7 +3717,12 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelector(".main-content");
     if (mainContent) mainContent.onscroll = (e) => handleScroll(e.target);
 
-    if (refreshBtn) refreshBtn.onclick = () => fetchGBMods(false);
+    if (refreshBtn) {
+      refreshBtn.onclick = () => {
+        loadBestShowcaseMods(true).then(() => renderFeaturedShowcase());
+        fetchGBMods(false);
+      };
+    }
     if (sortSelect) {
       sortSelect.onchange = () => {
         gbSortVal = sortSelect.value;
@@ -2582,6 +3741,7 @@ document.addEventListener("DOMContentLoaded", () => {
         searchTimeout = setTimeout(() => fetchGBMods(false), 500);
       };
     }
+
     fetchGBMods(false);
   };
 
@@ -2818,6 +3978,37 @@ document.addEventListener("DOMContentLoaded", () => {
     startIdleTimer();
   };
 
+  const ensureGBModalElement = async () => {
+    let modal = document.getElementById("gb-modal");
+    if (!modal) {
+      try {
+        const response = await fetch("pages/download.html");
+        if (response.ok) {
+          const html = await response.text();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, "text/html");
+          const modalInDoc = doc.getElementById("gb-modal");
+          if (modalInDoc) {
+            document.body.appendChild(modalInDoc);
+            modal = modalInDoc;
+          }
+        }
+      } catch (err) {
+      }
+    }
+    if (modal && modal.parentNode !== document.body) {
+      document.body.appendChild(modal);
+    }
+    if (!document.getElementById("gb-modal-style")) {
+      const link = document.createElement("link");
+      link.id = "gb-modal-style";
+      link.rel = "stylesheet";
+      link.href = "css/download.css";
+      document.head.appendChild(link);
+    }
+    return modal;
+  };
+
   const openGBModal = async (mod) => {
     if (!mod || !mod._idRow) return;
 
@@ -2828,14 +4019,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    const modal = document.getElementById("gb-modal");
+    const modal = await ensureGBModalElement();
     if (!modal) return;
 
-    if (modal.parentNode !== document.body) {
-      document.body.appendChild(modal);
-    }
-
     clearTimeout(gbIdleTimer);
+
+    applyTranslationsToDOM(modal);
 
     const titleEl = modal.querySelector("#gb-modal-title");
     const linkEl = modal.querySelector("#gb-modal-link");
@@ -2848,7 +4037,300 @@ document.addEventListener("DOMContentLoaded", () => {
     const filesList = modal.querySelector("#gb-files-list");
     const closeBtn = modal.querySelector("#gb-modal-close");
 
+    const versionEl = modal.querySelector("#gb-modal-version");
+    const authorWrap = modal.querySelector("#gb-modal-author-wrap");
+    const authorAvatar = modal.querySelector("#gb-modal-author-avatar");
+    const authorName = modal.querySelector("#gb-modal-author-name");
+    const authorTitle = modal.querySelector("#gb-modal-author-title");
+    const favAuthorBtn = modal.querySelector("#gb-modal-fav-author-btn");
+    const categoryEl = modal.querySelector("#gb-modal-category");
+
+    const updateFavAuthorBtnState = (subObj) => {
+      if (!favAuthorBtn) return;
+      if (subObj && subObj._idRow && subObj._sName) {
+        favAuthorBtn.style.display = "inline-flex";
+        const isFav = isFavoriteAuthor(subObj._idRow, subObj._sName);
+        favAuthorBtn.classList.toggle("active", isFav);
+        favAuthorBtn.title = isFav ? t("gb_fav_author_remove") : t("gb_fav_author_add");
+        favAuthorBtn.onclick = (e) => {
+          e.stopPropagation();
+          toggleFavoriteAuthor({
+            id: subObj._idRow,
+            name: subObj._sName,
+            avatar: subObj._sAvatarUrl || "icons/cat.jpg"
+          });
+          const nowFav = isFavoriteAuthor(subObj._idRow, subObj._sName);
+          favAuthorBtn.classList.toggle("active", nowFav);
+          favAuthorBtn.title = nowFav ? t("gb_fav_author_remove") : t("gb_fav_author_add");
+        };
+      } else {
+        favAuthorBtn.style.display = "none";
+      }
+    };
+
+    const statsViews = modal.querySelector("#gb-stat-views .gb-stat-val");
+    const statsDownloads = modal.querySelector("#gb-stat-downloads .gb-stat-val");
+    const statsLikes = modal.querySelector("#gb-stat-likes .gb-stat-val");
+    const statsPosts = modal.querySelector("#gb-stat-posts .gb-stat-val");
+    const statsThanks = modal.querySelector("#gb-stat-thanks .gb-stat-val");
+    const statsSubs = modal.querySelector("#gb-stat-subs .gb-stat-val");
+    const statsAdded = modal.querySelector("#gb-stat-date-added .gb-stat-val");
+    const statsUpdated = modal.querySelector("#gb-stat-date-updated .gb-stat-val");
+
+    const tabBtnDesc = modal.querySelector("#gb-tab-btn-desc");
+    const tabBtnComments = modal.querySelector("#gb-tab-btn-comments");
+    const tabBtnDetails = modal.querySelector("#gb-tab-btn-details");
+    const commentsBadge = modal.querySelector("#gb-comments-counter-badge");
+    const tabIndicator = modal.querySelector("#gb-tab-indicator");
+
+    const commentsPanel = modal.querySelector("#gb-modal-comments-panel");
+    const commentsList = modal.querySelector("#gb-comments-list");
+    const commentsLoading = modal.querySelector("#gb-comments-loading");
+    const commentsEmpty = modal.querySelector("#gb-comments-empty");
+    const commentsLoadMore = modal.querySelector("#gb-comments-load-more");
+
+    const detailsPanel = modal.querySelector("#gb-modal-details-panel");
+    const detailsContent = modal.querySelector("#gb-details-content");
+
+    let currentActiveTab = "desc";
+    const tabOrder = { desc: 0, comments: 1, details: 2 };
+    let profileDataCache = null;
+    let commentsLoaded = false;
+    let detailsRendered = false;
+
+    const renderDetailsContent = (pData) => {
+      if (!detailsContent || !pData) return;
+      detailsContent.innerHTML = "";
+      let hasDetails = false;
+
+      if (Array.isArray(pData._aTags) && pData._aTags.length > 0) {
+        hasDetails = true;
+        const tagSec = document.createElement("div");
+        tagSec.className = "gb-details-section";
+        const title = document.createElement("div");
+        title.className = "gb-details-section-title";
+        title.textContent = t("gb_details_tags");
+        tagSec.appendChild(title);
+
+        const wrap = document.createElement("div");
+        wrap.className = "gb-tags-wrap";
+        pData._aTags.forEach((tag) => {
+          const val = typeof tag === "string" ? tag : (tag._sTitle ? `${tag._sTitle}: ${tag._sValue}` : (tag._sValue || ""));
+          if (val) {
+            const chip = document.createElement("span");
+            chip.className = "gb-tag-chip";
+            chip.textContent = val;
+            wrap.appendChild(chip);
+          }
+        });
+        tagSec.appendChild(wrap);
+        detailsContent.appendChild(tagSec);
+      }
+
+      if (Array.isArray(pData._aCredits) && pData._aCredits.length > 0) {
+        hasDetails = true;
+        const crSec = document.createElement("div");
+        crSec.className = "gb-details-section";
+        const title = document.createElement("div");
+        title.className = "gb-details-section-title";
+        title.textContent = t("gb_details_credits");
+        crSec.appendChild(title);
+
+        const list = document.createElement("div");
+        list.className = "gb-credits-list";
+        pData._aCredits.forEach((crGroup) => {
+          const groupName = crGroup._sGroupName || "";
+          const authors = crGroup._aAuthors || [];
+          authors.forEach((author) => {
+            const item = document.createElement("div");
+            item.className = "gb-credit-item";
+            const nameSpan = document.createElement("span");
+            nameSpan.className = "gb-credit-name";
+            nameSpan.textContent = author._sName || "";
+            const roleSpan = document.createElement("span");
+            roleSpan.className = "gb-credit-role";
+            roleSpan.textContent = author._sRole || groupName || "";
+            item.appendChild(nameSpan);
+            item.appendChild(roleSpan);
+            list.appendChild(item);
+          });
+        });
+        crSec.appendChild(list);
+        detailsContent.appendChild(crSec);
+      }
+
+      if (pData._sFeedbackInstructions) {
+        hasDetails = true;
+        const instSec = document.createElement("div");
+        instSec.className = "gb-details-section";
+        const title = document.createElement("div");
+        title.className = "gb-details-section-title";
+        title.textContent = t("gb_details_instructions");
+        instSec.appendChild(title);
+
+        const box = document.createElement("div");
+        box.className = "gb-instructions-box";
+        box.innerHTML = sanitizeHtmlContent(pData._sFeedbackInstructions);
+        instSec.appendChild(box);
+        detailsContent.appendChild(instSec);
+      }
+
+      bindExternalLinks(detailsContent);
+
+      if (!hasDetails) {
+        const emptySec = document.createElement("div");
+        emptySec.className = "gb-comments-empty";
+        emptySec.textContent = t("gb_desc_empty");
+        detailsContent.appendChild(emptySec);
+      }
+    };
+
+    const triggerLazyComments = () => {
+      if (commentsLoaded) return;
+      commentsLoaded = true;
+      const subId = profileDataCache?._aSubmitter?._idRow || mod._aSubmitter?._idRow;
+      loadComments(1, subId);
+    };
+
+    const triggerLazyDetails = () => {
+      if (detailsRendered || !profileDataCache) return;
+      detailsRendered = true;
+      renderDetailsContent(profileDataCache);
+    };
+
+    const updateTabIndicator = (activeBtn, animate = true) => {
+      if (!tabIndicator || !activeBtn) return;
+      const left = activeBtn.offsetLeft;
+      const top = activeBtn.offsetTop;
+      const width = activeBtn.offsetWidth;
+      const height = activeBtn.offsetHeight;
+      if (!width || !height) return;
+      if (!animate) {
+        tabIndicator.style.transition = "none";
+      }
+      tabIndicator.style.width = `${width}px`;
+      tabIndicator.style.height = `${height}px`;
+      tabIndicator.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+      if (!animate) {
+        void tabIndicator.offsetWidth;
+        tabIndicator.style.transition = "";
+      }
+    };
+
+    const switchTab = (tabName, animate = true) => {
+      const prevIdx = tabOrder[currentActiveTab] ?? 0;
+      const nextIdx = tabOrder[tabName] ?? 0;
+      const directionClass = nextIdx > prevIdx ? "slide-right" : (nextIdx < prevIdx ? "slide-left" : "");
+      currentActiveTab = tabName;
+
+      const activeBtn = tabName === "desc" ? tabBtnDesc : (tabName === "comments" ? tabBtnComments : tabBtnDetails);
+
+      if (tabBtnDesc) tabBtnDesc.classList.toggle("active", tabName === "desc");
+      if (tabBtnComments) tabBtnComments.classList.toggle("active", tabName === "comments");
+      if (tabBtnDetails) tabBtnDetails.classList.toggle("active", tabName === "details");
+
+      updateTabIndicator(activeBtn, animate);
+
+      const panels = [
+        { name: "desc", el: descEl },
+        { name: "comments", el: commentsPanel },
+        { name: "details", el: detailsPanel }
+      ];
+
+      panels.forEach((p) => {
+        if (!p.el) return;
+        if (p.name === tabName) {
+          p.el.classList.remove("slide-right", "slide-left");
+          void p.el.offsetWidth;
+          if (directionClass) {
+            p.el.classList.add(directionClass);
+          }
+          p.el.classList.add("active");
+        } else {
+          p.el.classList.remove("active", "slide-right", "slide-left");
+        }
+      });
+
+      if (tabName === "comments") {
+        triggerLazyComments();
+      } else if (tabName === "details") {
+        triggerLazyDetails();
+      }
+    };
+
+    const onModalResize = () => {
+      const activeBtn = currentActiveTab === "desc" ? tabBtnDesc : (currentActiveTab === "comments" ? tabBtnComments : tabBtnDetails);
+      updateTabIndicator(activeBtn, false);
+    };
+    window.addEventListener("resize", onModalResize);
+
+    if (tabBtnDesc) tabBtnDesc.onclick = () => switchTab("desc");
+    if (tabBtnComments) tabBtnComments.onclick = () => switchTab("comments");
+    if (tabBtnDetails) tabBtnDetails.onclick = () => switchTab("details");
+    switchTab("desc", false);
+    requestAnimationFrame(() => updateTabIndicator(tabBtnDesc, false));
+    setTimeout(() => updateTabIndicator(tabBtnDesc, false), 50);
+
     if (titleEl) titleEl.textContent = mod._sName || "";
+
+    if (versionEl) {
+      if (mod._sVersion) {
+        versionEl.textContent = "v" + mod._sVersion.replace(/^v/i, "");
+        versionEl.style.display = "inline-block";
+      } else {
+        versionEl.style.display = "none";
+      }
+    }
+
+    if (statsLikes) statsLikes.textContent = abbreviateCount(mod._nLikeCount ?? 0);
+    if (statsViews) statsViews.textContent = abbreviateCount(mod._nViewCount ?? 0);
+    if (statsPosts) statsPosts.textContent = abbreviateCount(mod._nPostCount ?? 0);
+    if (commentsBadge) {
+      commentsBadge.textContent = (mod._nPostCount ?? 0).toString();
+      if (currentActiveTab === "comments") {
+        requestAnimationFrame(() => updateTabIndicator(tabBtnComments, false));
+      }
+    }
+    if (statsDownloads) statsDownloads.textContent = abbreviateCount(mod._nDownloadCount ?? 0);
+    if (statsThanks) statsThanks.textContent = "0";
+    if (statsSubs) statsSubs.textContent = "0";
+    if (statsAdded) statsAdded.textContent = mod._tsDateAdded ? new Date(mod._tsDateAdded * 1000).toLocaleDateString() : "-";
+    if (statsUpdated) statsUpdated.textContent = (mod._tsDateModified || mod._tsDateUpdated) ? timeAgo(mod._tsDateModified || mod._tsDateUpdated) : "-";
+
+    const initialSub = mod._aSubmitter;
+    if (initialSub && initialSub._sName) {
+      if (authorAvatar) {
+        authorAvatar.src = initialSub._sAvatarUrl || "icons/cat.jpg";
+        authorAvatar.onerror = () => {
+          authorAvatar.onerror = null;
+          authorAvatar.src = "icons/cat.jpg";
+        };
+      }
+      if (authorName) {
+        authorName.textContent = initialSub._sName;
+        authorName.onclick = (e) => {
+          e.preventDefault();
+          shell.openExternal(initialSub._sProfileUrl || `https://gamebanana.com/members/${initialSub._idRow}`);
+        };
+      }
+      if (authorTitle) {
+        authorTitle.textContent = initialSub._sUserTitle || "";
+        authorTitle.style.display = initialSub._sUserTitle ? "inline-block" : "none";
+      }
+      updateFavAuthorBtnState(initialSub);
+      if (authorWrap) authorWrap.style.display = "inline-flex";
+    } else if (authorWrap) {
+      authorWrap.style.display = "none";
+      if (favAuthorBtn) favAuthorBtn.style.display = "none";
+    }
+
+    const initialCat = mod._aCategory?._sName || mod._aSubCategory?._sName || mod._aRootCategory?._sName;
+    if (initialCat && categoryEl) {
+      categoryEl.textContent = initialCat;
+      categoryEl.style.display = "inline-block";
+    } else if (categoryEl) {
+      categoryEl.style.display = "none";
+    }
 
     if (linkEl) {
       const gbModUrl = `https://gamebanana.com/mods/${mod._idRow}`;
@@ -2865,14 +4347,11 @@ document.addEventListener("DOMContentLoaded", () => {
       gbImages = mod._aPreviewMedia._aImages.map(
         (img) => img._sBaseUrl + "/" + img._sFile,
       );
-      gbImages.forEach((url) => {
-        const p = new Image();
-        p.src = url;
-      });
     }
 
     if (imgEl) {
       imgEl.style.filter = "none";
+      imgEl.decoding = "async";
       imgEl.onerror = () => {
         imgEl.onerror = null;
         imgEl.src = "icons/cat.jpg";
@@ -2897,11 +4376,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (carouselContainer) {
+      carouselContainer.style.display = gbImages.length > 0 ? "flex" : "none";
       carouselContainer.onmousemove = resetIdleTimer;
       carouselContainer.ontouchstart = resetIdleTimer;
     }
 
     if (prevBtn) {
+      prevBtn.style.display = gbImages.length > 1 ? "flex" : "none";
       prevBtn.onclick = (e) => {
         e.stopPropagation();
         showModalImage(gbImgIndex - 1);
@@ -2910,6 +4391,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (nextBtn) {
+      nextBtn.style.display = gbImages.length > 1 ? "flex" : "none";
       nextBtn.onclick = (e) => {
         e.stopPropagation();
         showModalImage(gbImgIndex + 1);
@@ -2926,6 +4408,234 @@ document.addEventListener("DOMContentLoaded", () => {
     activeGBModalController = new AbortController();
 
     const shortDesc = mod._sDescription ? mod._sDescription.trim() : "";
+
+    let commentsPage = 1;
+    let commentsTotalCount = mod._nPostCount || 0;
+    let commentsLoadingActive = false;
+
+    const renderCommentItem = (comment, submitterId, isReply = false) => {
+      const card = document.createElement("div");
+      card.className = isReply ? "gb-reply-card" : "gb-comment-card";
+
+      const poster = comment._aPoster || comment._aSubmitter || {};
+      const isAuthor = poster._idRow === submitterId || (Array.isArray(comment._aLabels) && comment._aLabels.includes("Submitter"));
+
+      const header = document.createElement("div");
+      header.className = "gb-comment-header";
+
+      const aWrap = document.createElement("div");
+      aWrap.className = "gb-comment-author-wrap";
+
+      const avatar = document.createElement("img");
+      avatar.className = "gb-comment-avatar";
+      avatar.loading = "lazy";
+      avatar.decoding = "async";
+      avatar.src = poster._sAvatarUrl || "icons/cat.jpg";
+      avatar.onerror = () => {
+        avatar.onerror = null;
+        avatar.src = "icons/cat.jpg";
+      };
+
+      const nameEl = document.createElement("a");
+      nameEl.className = "gb-comment-author-name";
+      nameEl.textContent = poster._sName || "Anonymous";
+      nameEl.onclick = (e) => {
+        e.preventDefault();
+        if (poster._sProfileUrl || poster._idRow) {
+          shell.openExternal(poster._sProfileUrl || `https://gamebanana.com/members/${poster._idRow}`);
+        }
+      };
+
+      aWrap.appendChild(avatar);
+      aWrap.appendChild(nameEl);
+
+      if (isAuthor) {
+        const authorBadge = document.createElement("span");
+        authorBadge.className = "gb-comment-badge gb-comment-badge-submitter";
+        authorBadge.textContent = t("gb_author_submitter");
+        aWrap.appendChild(authorBadge);
+      }
+
+      const dateEl = document.createElement("span");
+      dateEl.className = "gb-comment-date";
+      dateEl.textContent = timeAgo(comment._tsDateAdded);
+      if (comment._tsDateAdded) {
+        dateEl.title = new Date(comment._tsDateAdded * 1000).toLocaleString();
+      }
+
+      header.appendChild(aWrap);
+      header.appendChild(dateEl);
+      card.appendChild(header);
+
+      const body = document.createElement("div");
+      body.className = "gb-comment-body";
+      body.innerHTML = sanitizeHtmlContent(comment._sText || "");
+      bindExternalLinks(body);
+      body.querySelectorAll("img").forEach((cImg) => {
+        cImg.loading = "lazy";
+        cImg.decoding = "async";
+        cImg.onerror = () => {
+          cImg.onerror = null;
+          cImg.src = "icons/cat.jpg";
+        };
+        cImg.onclick = () => {
+          if (cImg.src) openLightbox(cImg.src);
+        };
+      });
+      card.appendChild(body);
+
+      const hasStamps = Array.isArray(comment._aStamps) && comment._aStamps.length > 0;
+      const replyCount = Number(comment._nReplyCount) || 0;
+
+      if (hasStamps || replyCount > 0) {
+        const footer = document.createElement("div");
+        footer.className = "gb-comment-footer";
+
+        if (hasStamps) {
+          const stampsWrap = document.createElement("div");
+          stampsWrap.className = "gb-comment-stamps";
+          comment._aStamps.forEach((stamp) => {
+            const pill = document.createElement("span");
+            pill.className = "gb-stamp-pill";
+            pill.textContent = `${stamp._sTitle || ""} ${stamp._nCount || 1}`;
+            stampsWrap.appendChild(pill);
+          });
+          footer.appendChild(stampsWrap);
+        } else {
+          footer.appendChild(document.createElement("div"));
+        }
+
+        if (replyCount > 0 && !isReply) {
+          const replyToggleBtn = document.createElement("button");
+          replyToggleBtn.className = "gb-replies-toggle-btn";
+          replyToggleBtn.textContent = t("gb_replies_show", { count: replyCount });
+
+          let repliesContainer = null;
+          let repliesLoaded = false;
+          let repliesVisible = false;
+
+          replyToggleBtn.onclick = async () => {
+            if (!repliesContainer) {
+              repliesContainer = document.createElement("div");
+              repliesContainer.className = "gb-replies-container";
+              card.appendChild(repliesContainer);
+            }
+
+            if (repliesVisible) {
+              repliesContainer.style.display = "none";
+              replyToggleBtn.textContent = t("gb_replies_show", { count: replyCount });
+              repliesVisible = false;
+              return;
+            }
+
+            if (!repliesLoaded) {
+              replyToggleBtn.disabled = true;
+              replyToggleBtn.textContent = t("gb_replies_loading");
+              try {
+                const repliesUrl = `https://gamebanana.com/apiv11/Post/${comment._idRow}/Posts`;
+                const rRes = await fetch(repliesUrl, { signal: activeGBModalController?.signal });
+                if (rRes.ok) {
+                  const rData = await rRes.json();
+                  const rRecords = rData._aRecords || [];
+                  repliesContainer.innerHTML = "";
+                  rRecords.forEach((replyItem) => {
+                    const replyCard = renderCommentItem(replyItem, submitterId, true);
+                    repliesContainer.appendChild(replyCard);
+                  });
+                  repliesLoaded = true;
+                }
+              } catch (rErr) {
+              } finally {
+                replyToggleBtn.disabled = false;
+              }
+            }
+
+            repliesContainer.style.display = "flex";
+            replyToggleBtn.textContent = t("gb_replies_hide");
+            repliesVisible = true;
+          };
+
+          footer.appendChild(replyToggleBtn);
+        }
+
+        card.appendChild(footer);
+      }
+
+      return card;
+    };
+
+    const loadComments = async (page = 1, submitterId = null) => {
+      if (commentsLoadingActive) return;
+      commentsLoadingActive = true;
+
+      if (page === 1 && commentsList) commentsList.innerHTML = "";
+      if (commentsLoading) commentsLoading.style.display = "flex";
+      if (commentsEmpty) commentsEmpty.style.display = "none";
+      if (commentsLoadMore) commentsLoadMore.style.display = "none";
+
+      try {
+        let postsData = null;
+        const postsUrlNewest = `https://gamebanana.com/apiv11/Mod/${mod._idRow}/Posts?_nPage=${page}&_nPerpage=15&_sSort=newest`;
+        let res = null;
+        try {
+          res = await fetch(postsUrlNewest, { signal: activeGBModalController?.signal });
+        } catch (e) {
+          res = null;
+        }
+
+        if (!res || !res.ok) {
+          const postsUrlFallback = `https://gamebanana.com/apiv11/Mod/${mod._idRow}/Posts?_nPage=${page}&_nPerpage=15`;
+          res = await fetch(postsUrlFallback, { signal: activeGBModalController?.signal });
+        }
+
+        if (res && res.ok) {
+          postsData = await res.json();
+        }
+
+        if (requestId !== activeGBModalId) return;
+
+        const records = postsData?._aRecords || [];
+        const meta = postsData?._aMetadata || {};
+        if (meta._nRecordCount != null) {
+          commentsTotalCount = meta._nRecordCount;
+          if (commentsBadge) {
+            commentsBadge.textContent = commentsTotalCount.toString();
+            if (currentActiveTab === "comments") {
+              requestAnimationFrame(() => updateTabIndicator(tabBtnComments, false));
+            }
+          }
+          if (statsPosts) statsPosts.textContent = abbreviateCount(commentsTotalCount);
+        }
+
+        if (commentsLoading) commentsLoading.style.display = "none";
+
+        if (records.length === 0 && page === 1) {
+          if (commentsEmpty) commentsEmpty.style.display = "block";
+        } else if (commentsList) {
+          records.forEach((comment) => {
+            const cCard = renderCommentItem(comment, submitterId);
+            commentsList.appendChild(cCard);
+          });
+
+          const hasMore = meta._bIsComplete === false || (commentsList.children.length < commentsTotalCount);
+          if (commentsLoadMore) {
+            commentsLoadMore.style.display = hasMore ? "block" : "none";
+            commentsLoadMore.onclick = () => {
+              loadComments(++commentsPage, submitterId);
+            };
+          }
+        }
+      } catch (err) {
+        if (requestId !== activeGBModalId) return;
+        if (commentsLoading) commentsLoading.style.display = "none";
+        if (page === 1 && commentsEmpty) {
+          commentsEmpty.textContent = t("gb_comments_error");
+          commentsEmpty.style.display = "block";
+        }
+      } finally {
+        commentsLoadingActive = false;
+      }
+    };
 
     const loadModalData = async () => {
       if (descEl) {
@@ -2956,41 +4666,155 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       try {
-        let itemData = gbItemDataCache.get(mod._idRow);
+        let profileData = gbProfileCache.get(mod._idRow);
 
-        if (!itemData) {
-          const dataUrl = `https://api.gamebanana.com/Core/Item/Data?itemtype=Mod&itemid=${mod._idRow}&fields=text,Files().aFiles()`;
+        if (!profileData) {
+          let fetchSuccess = false;
+          const profileUrl = `https://gamebanana.com/apiv11/Mod/${mod._idRow}/ProfilePage`;
           const fetchSignal = activeGBModalController.signal;
-
           const timeoutId = setTimeout(() => {
             if (activeGBModalController) activeGBModalController.abort();
-          }, 12000);
+          }, 15000);
 
-          let dataRes;
           try {
-            dataRes = await fetch(dataUrl, { signal: fetchSignal });
+            const pRes = await fetch(profileUrl, { signal: fetchSignal });
+            if (pRes.ok) {
+              const pJson = await pRes.json();
+              if (pJson && !pJson._sErrorCode) {
+                profileData = pJson;
+                fetchSuccess = true;
+              }
+            }
+          } catch (pErr) {
           } finally {
             clearTimeout(timeoutId);
           }
 
-          if (!dataRes.ok) {
-            throw new Error(`HTTP ${dataRes.status}`);
-          }
-          itemData = await dataRes.json();
+          if (!fetchSuccess) {
+            const csvUrl = `https://gamebanana.com/apiv11/Mod/${mod._idRow}?_csvProperties=_sName,_nLikeCount,_nViewCount,_nDownloadCount,_nPostCount,_tsDateAdded`;
+            const coreUrl = `https://api.gamebanana.com/Core/Item/Data?itemtype=Mod&itemid=${mod._idRow}&fields=text,Files().aFiles()`;
 
-          if (!Array.isArray(itemData) || itemData.length < 2) {
-            throw new Error("Invalid response format");
+            const [csvRes, coreRes] = await Promise.all([
+              fetch(csvUrl, { signal: fetchSignal }).catch(() => null),
+              fetch(coreUrl, { signal: fetchSignal }).catch(() => null),
+            ]);
+
+            let csvData = {};
+            if (csvRes && csvRes.ok) {
+              csvData = await csvRes.json();
+            }
+
+            let coreData = [];
+            if (coreRes && coreRes.ok) {
+              coreData = await coreRes.json();
+            }
+
+            if (!Array.isArray(coreData) || coreData.length < 2) {
+              throw new Error("Invalid response format");
+            }
+
+            profileData = {
+              ...csvData,
+              _sName: csvData._sName || mod._sName,
+              _sText: coreData[0] || "",
+              _aFiles: coreData[1] || {},
+              _aSubmitter: mod._aSubmitter,
+            };
           }
 
-          gbItemDataCache.set(mod._idRow, itemData);
+          gbProfileCache.set(mod._idRow, profileData);
         }
 
         if (requestId !== activeGBModalId) return;
 
+        if (titleEl && profileData._sName) {
+          titleEl.textContent = profileData._sName;
+        }
+
+        if (versionEl) {
+          if (profileData._sVersion) {
+            versionEl.textContent = "v" + profileData._sVersion.replace(/^v/i, "");
+            versionEl.style.display = "inline-block";
+          } else {
+            versionEl.style.display = "none";
+          }
+        }
+
+        const sub = profileData._aSubmitter || mod._aSubmitter;
+        if (sub && sub._sName) {
+          if (authorAvatar) {
+            authorAvatar.src = sub._sAvatarUrl || "icons/cat.jpg";
+            authorAvatar.onerror = () => {
+              authorAvatar.onerror = null;
+              authorAvatar.src = "icons/cat.jpg";
+            };
+          }
+          if (authorName) {
+            authorName.textContent = sub._sName;
+            authorName.onclick = (e) => {
+              e.preventDefault();
+              shell.openExternal(sub._sProfileUrl || `https://gamebanana.com/members/${sub._idRow}`);
+            };
+          }
+          if (authorTitle) {
+            authorTitle.textContent = sub._sUserTitle || "";
+            authorTitle.style.display = sub._sUserTitle ? "inline-block" : "none";
+          }
+          updateFavAuthorBtnState(sub);
+          if (authorWrap) authorWrap.style.display = "inline-flex";
+        } else if (favAuthorBtn) {
+          favAuthorBtn.style.display = "none";
+        }
+
+        const catName =
+          profileData._aCategory?._sName ||
+          profileData._aSubCategory?._sName ||
+          profileData._aRootCategory?._sName ||
+          mod._aCategory?._sName ||
+          mod._aSubCategory?._sName ||
+          mod._aRootCategory?._sName;
+        if (catName && categoryEl) {
+          categoryEl.textContent = catName;
+          categoryEl.style.display = "inline-block";
+        }
+
+        if (statsViews) statsViews.textContent = abbreviateCount(profileData._nViewCount ?? mod._nViewCount ?? 0);
+        if (statsDownloads) statsDownloads.textContent = abbreviateCount(profileData._nDownloadCount ?? 0);
+        if (statsLikes) statsLikes.textContent = abbreviateCount(profileData._nLikeCount ?? mod._nLikeCount ?? 0);
+        if (statsPosts) statsPosts.textContent = abbreviateCount(profileData._nPostCount ?? mod._nPostCount ?? 0);
+        if (commentsBadge) {
+          commentsBadge.textContent = (profileData._nPostCount ?? mod._nPostCount ?? 0).toString();
+          if (currentActiveTab === "comments") {
+            requestAnimationFrame(() => updateTabIndicator(tabBtnComments, false));
+          }
+        }
+        if (statsThanks) statsThanks.textContent = abbreviateCount(profileData._nThanksCount ?? 0);
+        if (statsSubs) statsSubs.textContent = abbreviateCount(profileData._nSubscriberCount ?? 0);
+        const addedTs = profileData._tsDateAdded || mod._tsDateAdded;
+        if (statsAdded && addedTs) statsAdded.textContent = new Date(addedTs * 1000).toLocaleDateString();
+        const updTs =
+          profileData._tsDateModified ||
+          profileData._tsDateUpdated ||
+          mod._tsDateModified ||
+          mod._tsDateUpdated;
+        if (statsUpdated && updTs) statsUpdated.textContent = timeAgo(updTs);
+
+        if (
+          profileData._aPreviewMedia &&
+          profileData._aPreviewMedia._aImages &&
+          profileData._aPreviewMedia._aImages.length > gbImages.length
+        ) {
+          gbImages = profileData._aPreviewMedia._aImages.map(
+            (img) => img._sBaseUrl + "/" + img._sFile,
+          );
+        }
+
         if (descEl) {
-          descEl.innerHTML = itemData[0] || shortDesc || t('gb_desc_empty');
+          descEl.innerHTML = profileData._sText || shortDesc || t("gb_desc_empty");
           descEl.querySelectorAll("img").forEach((dImg) => {
             dImg.draggable = false;
+            dImg.loading = "lazy";
+            dImg.decoding = "async";
             dImg.onerror = () => {
               dImg.onerror = null;
               dImg.src = "icons/cat.jpg";
@@ -3046,28 +4870,42 @@ document.addEventListener("DOMContentLoaded", () => {
               dImg.onload = setupLoadedImg;
             }
           });
+          bindExternalLinks(descEl);
         }
 
-        const filesObj = itemData[1];
+        profileDataCache = profileData;
+        if (currentActiveTab === "details") {
+          triggerLazyDetails();
+        } else if (currentActiveTab === "comments") {
+          triggerLazyComments();
+        }
+
+        const filesRaw = profileData._aFiles;
+        const filesArr = Array.isArray(filesRaw) ? filesRaw : (filesRaw && typeof filesRaw === "object" ? Object.values(filesRaw) : []);
         if (filesLoading) filesLoading.style.display = "none";
 
-        if (filesObj && Object.keys(filesObj).length > 0 && filesList) {
+        if (filesArr.length > 0 && filesList) {
           filesList.innerHTML = "";
-          if (modManager.isModDownloaded(currentSettings.xxmiPath, mod._idRow)) {
+          if (filesArr.length === 1 && modManager.isModDownloaded(currentSettings.xxmiPath, mod._idRow)) {
             const msg = document.createElement("div");
             msg.style.cssText =
               "padding:12px; background:rgba(255,42,42,0.1); border:1px solid var(--color-red); border-radius:8px; color:var(--color-red); margin-bottom:12px; font-size:0.9rem; font-weight:600;";
-            msg.textContent = t('gb_already_dl_msg');
+            msg.textContent = t("gb_already_dl_msg");
             filesList.appendChild(msg);
           }
 
           const previewUrlToPass = gbImages.length > 0 ? gbImages[0] : null;
 
-          const sortedFiles = Object.values(filesObj).sort((a, b) => {
+          const sortedFiles = filesArr.slice().sort((a, b) => {
             const timeA = Number(a._tsDateAdded) || Number(a._idRow) || 0;
             const timeB = Number(b._tsDateAdded) || Number(b._idRow) || 0;
             return timeB - timeA;
           });
+
+          const safeModFolder =
+            (profileData._sName || mod._sName || "")
+              .replace(/[<>:"/\\|?*]+/g, "")
+              .trim() || "Mod_" + mod._idRow;
 
           sortedFiles.forEach((file) => {
             const fDiv = document.createElement("div");
@@ -3077,26 +4915,60 @@ document.addEventListener("DOMContentLoaded", () => {
               (d) => d.fileName === file._sFile,
             );
 
+            const safeVariationName =
+              file._sFile.replace(/\.[^/.]+$/, "").replace(/[<>:"/\\|?*]+/g, "").trim() ||
+              "Default";
+            let isFileDownloaded = false;
+            if (currentSettings.xxmiPath) {
+              const varPath = path.join(currentSettings.xxmiPath, "modvars", safeModFolder, safeVariationName);
+              const modPath = path.join(currentSettings.xxmiPath, "Mods", safeModFolder);
+              const disPath = path.join(currentSettings.xxmiPath, "dismods", safeModFolder);
+              if (fs.existsSync(varPath)) {
+                isFileDownloaded = true;
+              } else if (filesArr.length === 1 && (fs.existsSync(modPath) || fs.existsSync(disPath))) {
+                isFileDownloaded = true;
+              }
+            }
+
+            const dlCountStr = file._nDownloadCount != null ? ` &bull; ${file._nDownloadCount} ${t("gb_file_downloads")}` : "";
+            const descStr = file._sDescription ? `<div class="gb-file-desc">${file._sDescription}</div>` : "";
+
+            const btnText = isFileDownloading
+              ? t("gb_downloading")
+              : (isFileDownloaded ? t("gb_file_installed") : t("gb_install"));
+
+            const btnStyle = isFileDownloading
+              ? 'disabled style="background:#3f3f46; cursor:not-allowed;"'
+              : (isFileDownloaded ? 'style="background:var(--accent-dim); border:1px solid var(--accent); color:var(--text-on-accent);"' : '');
+
             fDiv.innerHTML = `
               <strong>${file._sFile}</strong>
-              <div style="margin-bottom: 8px; font-size: 0.85rem; color: var(--color-muted);">
-                ${t('gb_added')}: ${new Date(file._tsDateAdded * 1000).toLocaleDateString()} &bull; ${(file._nFilesize / 1024 / 1024).toFixed(2)} MB
+              ${descStr}
+              <div class="gb-file-meta">
+                <span>${t("gb_added")}: ${new Date(file._tsDateAdded * 1000).toLocaleDateString()}</span>
+                <span>&bull; ${(file._nFilesize / 1024 / 1024).toFixed(2)} MB</span>
+                ${dlCountStr}
               </div>
-              <button class="btn-install" ${isFileDownloading ? 'disabled style="background:#3f3f46; cursor:not-allowed;"' : ""}>
-                ${isFileDownloading ? t('gb_downloading') : t('gb_install')}
+              <button class="btn-install" ${btnStyle}>
+                ${btnText}
               </button>
             `;
             fDiv.querySelector(".btn-install").onclick = () => {
               if (!isFileDownloading) {
-                const modDescriptionToPass =
-                  itemData && itemData[0] ? itemData[0] : (mod._sDescription || "");
+                const modDescriptionToPass = profileData._sText || mod._sDescription || "";
+                const modToPass = {
+                  ...mod,
+                  ...profileData,
+                  _aSubmitter: sub || mod._aSubmitter,
+                  author: (sub && sub._sName) || (mod._aSubmitter && mod._aSubmitter._sName) || null,
+                };
                 startDownload(
                   file,
                   mod._sName,
                   mod._idRow,
                   previewUrlToPass,
                   modDescriptionToPass,
-                  mod,
+                  modToPass,
                 );
                 modal.classList.remove("active");
               }
@@ -3104,7 +4976,7 @@ document.addEventListener("DOMContentLoaded", () => {
             filesList.appendChild(fDiv);
           });
         } else if (filesList) {
-          filesList.innerHTML = `<div style="color:var(--color-muted);">${t('gb_files_unavail')}</div>`;
+          filesList.innerHTML = `<div style="color:var(--color-muted);">${t("gb_files_unavail")}</div>`;
         }
       } catch (err) {
         if (requestId !== activeGBModalId) return;
@@ -3116,15 +4988,15 @@ document.addEventListener("DOMContentLoaded", () => {
             descEl.innerHTML = `
               <div>${shortDesc}</div>
               <div class="gb-modal-error-box" style="margin-top: 14px;">
-                <div class="gb-modal-error-text">${t('gb_data_fetch_fail')}</div>
-                <button class="gb-modal-retry-btn" id="gb-modal-retry-desc-btn">${t('gb_retry')}</button>
+                <div class="gb-modal-error-text">${t("gb_data_fetch_fail")}</div>
+                <button class="gb-modal-retry-btn" id="gb-modal-retry-desc-btn">${t("gb_retry")}</button>
               </div>
             `;
           } else {
             descEl.innerHTML = `
               <div class="gb-modal-error-box">
-                <div class="gb-modal-error-text">${t('gb_data_fetch_fail')}</div>
-                <button class="gb-modal-retry-btn" id="gb-modal-retry-desc-btn">${t('gb_retry')}</button>
+                <div class="gb-modal-error-text">${t("gb_data_fetch_fail")}</div>
+                <button class="gb-modal-retry-btn" id="gb-modal-retry-desc-btn">${t("gb_retry")}</button>
               </div>
             `;
           }
@@ -3137,8 +5009,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (filesList) {
           filesList.innerHTML = `
             <div class="gb-modal-error-box">
-              <div class="gb-modal-error-text">${t('gb_files_fail')}</div>
-              <button class="gb-modal-retry-btn" id="gb-modal-retry-files-btn">${t('gb_retry')}</button>
+              <div class="gb-modal-error-text">${t("gb_files_fail")}</div>
+              <button class="gb-modal-retry-btn" id="gb-modal-retry-files-btn">${t("gb_retry")}</button>
             </div>
           `;
           const retryFilesBtn = filesList.querySelector("#gb-modal-retry-files-btn");
@@ -3154,6 +5026,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const handleClose = () => {
       modal.classList.remove("active");
       clearTimeout(gbIdleTimer);
+      window.removeEventListener("resize", onModalResize);
       if (activeGBModalController) {
         activeGBModalController.abort();
       }
@@ -3369,6 +5242,15 @@ document.addEventListener("DOMContentLoaded", () => {
               rootCat = detected.category;
             }
 
+            let authorName = null;
+            if (gbMod) {
+              if (gbMod._aSubmitter && gbMod._aSubmitter._sName) {
+                authorName = gbMod._aSubmitter._sName;
+              } else if (gbMod.author) {
+                authorName = gbMod.author;
+              }
+            }
+
             modManager.setModMetadata(
               safeModFolder,
               {
@@ -3377,6 +5259,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 character: charName,
                 characterId: charId,
                 category: rootCat,
+                author: authorName,
                 sourceUrl: `https://gamebanana.com/mods/${modId}`,
               },
               [variationFolder, modvarsModFolder, targetModFolder, dismodFolder],
@@ -3442,7 +5325,26 @@ document.addEventListener("DOMContentLoaded", () => {
       });
   };
 
+  let dlSearchTerm = "";
+
   const initDownloadsTab = () => {
+    const searchInput = document.getElementById("dl-search-input");
+    if (searchInput) {
+      searchInput.value = dlSearchTerm;
+      searchInput.oninput = (e) => {
+        dlSearchTerm = e.target.value.toLowerCase().trim();
+        renderDownloadsTab();
+      };
+    }
+
+    const goCatalogBtn = document.getElementById("dl-go-catalog-btn");
+    if (goCatalogBtn) {
+      goCatalogBtn.onclick = () => {
+        const gbTab = document.querySelector('.sidebar-item[data-page="download"]');
+        if (gbTab) gbTab.click();
+      };
+    }
+
     renderDownloadsTab();
   };
 
@@ -3450,37 +5352,66 @@ document.addEventListener("DOMContentLoaded", () => {
     const list = document.getElementById("downloads-list");
     if (!list) return;
 
-    const keys = Object.keys(activeDownloads);
-    const activeBadge = document.querySelector(
-      ".summary-badge.active span:last-child",
-    );
-    const speedBadge = document.querySelector(".summary-badge.speed span");
+    const activeKeys = Object.keys(activeDownloads);
+    const activeCount = activeKeys.length;
 
     let totalSpeedBytes = 0;
-    keys.forEach((k) => {
+    activeKeys.forEach((k) => {
       totalSpeedBytes += activeDownloads[k].speed || 0;
     });
 
-    if (activeBadge) activeBadge.textContent = t('dl_active_count', { count: keys.length });
-    if (speedBadge)
-      speedBadge.textContent = t('dl_speed_mb', { speed: (totalSpeedBytes / 1024 / 1024).toFixed(1) });
+    const speedVal = document.getElementById("dl-speed-val");
+    const activeVal = document.getElementById("dl-active-val");
 
-    if (keys.length === 0) {
-      list.innerHTML =
-        `<div class="empty-state" style="color: var(--color-muted); text-align: center; padding: 40px 0;">${t('dl_empty_state')}</div>`;
+    if (speedVal) speedVal.textContent = t('dl_speed_mb', { speed: (totalSpeedBytes / 1024 / 1024).toFixed(1) });
+    if (activeVal) activeVal.textContent = activeCount.toString();
+
+    const filteredKeys = activeKeys.filter((key) => {
+      const item = activeDownloads[key];
+      if (!dlSearchTerm) return true;
+      return (
+        (item.name && item.name.toLowerCase().includes(dlSearchTerm)) ||
+        (item.fileName && item.fileName.toLowerCase().includes(dlSearchTerm))
+      );
+    });
+
+    if (filteredKeys.length === 0) {
+      list.innerHTML = `
+        <div class="dl-empty-state">
+          <div class="dl-empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </div>
+          <div class="dl-empty-title">${t('dl_empty_title')}</div>
+          <div class="dl-empty-desc">${t('dl_empty_desc')}</div>
+          <button class="dl-empty-btn" id="dl-empty-go-catalog">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+            <span>${t('dl_go_catalog')}</span>
+          </button>
+        </div>
+      `;
+      const catalogBtn = document.getElementById("dl-empty-go-catalog");
+      if (catalogBtn) {
+        catalogBtn.onclick = () => {
+          const gbTab = document.querySelector('.sidebar-item[data-page="download"]');
+          if (gbTab) gbTab.click();
+        };
+      }
       return;
     }
 
-    const emptyState = list.querySelector(".empty-state");
+    const emptyState = list.querySelector(".dl-empty-state");
     if (emptyState) emptyState.remove();
 
-    const currentCards = list.querySelectorAll(".download-card");
-    currentCards.forEach((card) => {
-      const cardId = card.getAttribute("data-id");
-      if (!activeDownloads[cardId]) card.remove();
+    const existingCards = list.querySelectorAll(".download-card");
+    const activeKeysSet = new Set(filteredKeys);
+    existingCards.forEach((card) => {
+      const cardKey = card.getAttribute("data-id");
+      if (!activeKeysSet.has(cardKey)) {
+        card.remove();
+      }
     });
 
-    keys.forEach((key) => {
+    filteredKeys.forEach((key) => {
       const d = activeDownloads[key];
       const percent = d.total
         ? Math.min(100, Math.round((d.progress / d.total) * 100))
@@ -3501,48 +5432,56 @@ document.addEventListener("DOMContentLoaded", () => {
           : "";
 
         card.innerHTML = `
-                    <div class="download-preview" style="${bgStyle}">
-                        <div class="download-status-tag active">${t('dl_status_downloading')}</div>
-                    </div>
-                    
-                    <div class="download-content">
-                        <div class="download-header-row">
-                            <div class="download-title-block">
-                                <span class="download-name">${d.name}</span>
-                                <span class="download-subtext">${d.fileName}</span>
-                            </div>
+          <div class="download-preview" style="${bgStyle}">
+            <div class="download-status-tag active">${t('dl_status_downloading')}</div>
+          </div>
+          
+          <div class="download-content">
+            <div class="download-header-row">
+              <div class="download-title-block">
+                <span class="download-name">${d.name}</span>
+                <span class="download-subtext">${d.fileName}</span>
+              </div>
 
-                            <div class="download-actions">
-                                <button class="action-btn stop btn-cancel" title="${t('dl_action_stop')}" data-id="${key}">
-                                    <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-                                </button>
-                            </div>
-                        </div>
+              <div class="download-actions">
+                <button class="dl-action-btn btn-cancel" title="${t('dl_action_stop')}" data-id="${key}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  <span>${t('dl_action_stop')}</span>
+                </button>
+              </div>
+            </div>
 
-                        <div class="progress-section">
-                            <div class="progress-bar-track">
-                                <div class="progress-bar-fill downloading-glow" style="width: ${percent}%;"></div>
-                            </div>
-                        </div>
+            <div class="dl-progress-section">
+              <div class="dl-progress-bar-track">
+                <div class="dl-progress-bar-fill" style="width: ${percent}%;"></div>
+              </div>
+            </div>
 
-                        <div class="download-footer-row">
-                            <span class="meta-speed">${speedMb} МБ/с</span>
-                            <span class="meta-info">${downloadedMb} MB / ${totalMb} MB</span>
-                            <span class="meta-percent">${percent}%</span>
-                            <span class="meta-eta">${d.status}</span>
-                        </div>
-                    </div>
-                `;
+            <div class="download-footer-row">
+              <div class="dl-meta-left">
+                <span class="meta-speed">${speedMb} МБ/с</span>
+                <span class="meta-info">${downloadedMb} MB / ${totalMb} MB</span>
+              </div>
+              <div class="dl-meta-right">
+                <span class="meta-percent">${percent}%</span>
+                <span class="meta-eta">${d.status}</span>
+              </div>
+            </div>
+          </div>
+        `;
 
-        card.querySelector(".btn-cancel").onclick = () => {
-          if (d.req) d.req.destroy();
-          delete activeDownloads[key];
-          renderDownloadsTab();
-        };
+        const cancelBtn = card.querySelector(".btn-cancel");
+        if (cancelBtn) {
+          cancelBtn.onclick = () => {
+            if (d.req) d.req.destroy();
+            delete activeDownloads[key];
+            renderDownloadsTab();
+          };
+        }
 
         list.appendChild(card);
       } else {
-        const progressFill = card.querySelector(".progress-bar-fill");
+        const progressFill = card.querySelector(".dl-progress-bar-fill");
         const metaSpeed = card.querySelector(".meta-speed");
         const metaInfo = card.querySelector(".meta-info");
         const metaPercent = card.querySelector(".meta-percent");
@@ -3550,8 +5489,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (progressFill) progressFill.style.width = `${percent}%`;
         if (metaSpeed) metaSpeed.textContent = `${speedMb} МБ/с`;
-        if (metaInfo)
-          metaInfo.textContent = `${downloadedMb} MB / ${totalMb} MB`;
+        if (metaInfo) metaInfo.textContent = `${downloadedMb} MB / ${totalMb} MB`;
         if (metaPercent) metaPercent.textContent = `${percent}%`;
         if (metaEta) metaEta.textContent = d.status;
       }
@@ -3729,8 +5667,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const versionEl = document.getElementById("setting-launcher-version");
     if (versionEl) {
-      const v = typeof AutoUpdater !== "undefined" ? AutoUpdater.getCurrentVersion() : "0.2.3";
-      const cleanV = String(v || "0.2.3").replace(/^v/i, "").trim();
+      const v = typeof AutoUpdater !== "undefined" ? AutoUpdater.getCurrentVersion() : "0.3.0";
+      const cleanV = String(v || "0.3.0").replace(/^v/i, "").trim();
       versionEl.textContent = `v${cleanV}`;
     }
 
@@ -3763,6 +5701,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const saveSettings = () => {
       currentSettings = {
+        ...currentSettings,
         xxmiPath: xxmiPathInput
           ? xxmiPathInput.value
           : currentSettings.xxmiPath || "",
@@ -3773,12 +5712,368 @@ document.addEventListener("DOMContentLoaded", () => {
         language: langSelect ? langSelect.value : (currentSettings.language || "en"),
         theme: themeSelect ? mapLegacyTheme(themeSelect.value) : (currentSettings.theme || "purple"),
         skipSplashScreen: skipSplashCheckbox ? skipSplashCheckbox.checked : !!currentSettings.skipSplashScreen,
+        usefulMods: currentSettings.usefulMods || [],
+        favoriteAuthors: currentSettings.favoriteAuthors || [],
       };
       fs.writeFileSync(
         settingsFilePath,
         JSON.stringify(currentSettings, null, 4),
       );
     };
+
+    const initFeaturesTab = () => {
+      const listContainer = document.getElementById("features-mods-list");
+
+      if (!Array.isArray(currentSettings.usefulMods)) {
+        currentSettings.usefulMods = [];
+      }
+
+      const getModInstallStatus = (mod) => {
+        if (!currentSettings.xxmiPath || !fs.existsSync(currentSettings.xxmiPath)) {
+          return { installed: false, active: false, folderName: null, variations: [], activeVariation: null };
+        }
+
+        const modsDir = path.join(currentSettings.xxmiPath, "Mods");
+        const dismodsDir = path.join(currentSettings.xxmiPath, "dismods");
+        const modvarsDir = path.join(currentSettings.xxmiPath, "modvars");
+        const modIdStr = String(mod.id || mod._idRow || "");
+        const modNameLower = String(mod.name || mod._sName || "").trim().toLowerCase();
+
+        let dowlinksLower = {};
+        try {
+          const parsed = modManager.getDowlinks();
+          for (const [k, v] of Object.entries(parsed)) {
+            dowlinksLower[k.trim().toLowerCase()] = String(v);
+          }
+        } catch (e) { }
+
+        const checkDir = (dirPath) => {
+          if (!fs.existsSync(dirPath)) return null;
+          try {
+            const items = fs.readdirSync(dirPath, { withFileTypes: true });
+            for (const it of items) {
+              if (it.isDirectory() && !it.name.startsWith(".") && it.name !== "__MACOSX") {
+                const nameLower = it.name.trim().toLowerCase();
+                const normName = nameLower.replace(/[^a-z0-9]/gi, "");
+                const normMod = modNameLower.replace(/[^a-z0-9]/gi, "");
+                if (normMod && normName && (normName === normMod || (normMod.length >= 4 && normName.startsWith(normMod)))) {
+                  return it.name;
+                }
+                const link = dowlinksLower[nameLower];
+                if (link && modIdStr) {
+                  const m = link.match(/(?:mods\/)?(\d+)/i);
+                  if (m && m[1] === modIdStr) return it.name;
+                }
+              }
+            }
+          } catch (e) { }
+          return null;
+        };
+
+        const activeFolder = checkDir(modsDir);
+        const inactiveFolder = checkDir(dismodsDir);
+        let folderName = activeFolder || inactiveFolder;
+        let isInstalled = !!folderName;
+        let isActive = !!activeFolder;
+
+        if (!folderName) {
+          const modvarFolder = checkDir(modvarsDir);
+          if (modvarFolder) {
+            folderName = modvarFolder;
+            isInstalled = true;
+            isActive = false;
+          }
+        }
+
+        let variations = [];
+        let activeVariation = null;
+        let activeOptions = [];
+        if (folderName) {
+          const modvarsModPath = path.join(modvarsDir, folderName);
+          if (fs.existsSync(modvarsModPath)) {
+            try {
+              const varEntries = fs.readdirSync(modvarsModPath, { withFileTypes: true });
+              variations = varEntries.filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => e.name);
+              let hasActiveOptsFile = false;
+              const activeOptsFile = path.join(modvarsModPath, ".active_options");
+              if (fs.existsSync(activeOptsFile)) {
+                try {
+                  const parsed = JSON.parse(fs.readFileSync(activeOptsFile, "utf-8"));
+                  if (Array.isArray(parsed)) {
+                    activeOptions = parsed;
+                    hasActiveOptsFile = true;
+                  }
+                } catch (e) { }
+              }
+              const activeVarFile = path.join(modvarsModPath, ".active_var");
+              if (fs.existsSync(activeVarFile)) {
+                activeVariation = fs.readFileSync(activeVarFile, "utf-8").trim();
+              }
+              if (!hasActiveOptsFile) {
+                if (activeVariation) {
+                  activeOptions = [activeVariation];
+                } else if (variations.length > 0) {
+                  activeOptions = [variations[0]];
+                }
+              }
+              if (!activeVariation && variations.length > 0) {
+                activeVariation = activeOptions[0] || variations[0];
+              }
+            } catch (e) { }
+          }
+        }
+
+        return {
+          installed: isInstalled,
+          active: isActive,
+          folderName: folderName,
+          variations: variations,
+          activeVariation: activeVariation,
+          activeOptions: activeOptions
+        };
+      };
+
+      const fetchModInfoFromGB = async (mod) => {
+        let modId = mod.id || mod._idRow;
+        if (!modId && (mod.profileUrl || mod._sProfileUrl)) {
+          const m = String(mod.profileUrl || mod._sProfileUrl).match(/(?:mods\/)(\d+)/i);
+          if (m) modId = m[1];
+        }
+        if (!modId) return null;
+        try {
+          let pData = gbProfileCache.get(Number(modId));
+          if (!pData) {
+            const res = await fetch(`https://gamebanana.com/apiv11/Mod/${modId}/ProfilePage`);
+            if (res.ok) {
+              const json = await res.json();
+              if (json && !json._sErrorCode) {
+                pData = json;
+                gbProfileCache.set(Number(modId), pData);
+              }
+            }
+          }
+          if (pData) {
+            return {
+              author: pData._aSubmitter?._sName || null,
+              submitter: pData._aSubmitter || null,
+              name: pData._sName || null,
+              previewMedia: pData._aPreviewMedia || null
+            };
+          }
+        } catch (e) { }
+        return null;
+      };
+
+      const renderFeaturesList = () => {
+        if (!listContainer) return;
+        const list = (currentSettings.usefulMods || []).slice().sort((a, b) => {
+          const nameA = String(a.name || a._sName || "").toLowerCase();
+          const nameB = String(b.name || b._sName || "").toLowerCase();
+          return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+        });
+
+        if (list.length === 0) {
+          listContainer.innerHTML = `<div class="features-empty-state">${t("features_empty_title")}</div>`;
+          return;
+        }
+
+        listContainer.innerHTML = "";
+
+        list.forEach((mod) => {
+          const row = document.createElement("div");
+          row.className = "feature-item-row";
+
+          const previewImg = mod.previewUrl || mod._sPreviewUrl || "";
+          const bgStyle = previewImg ? `background-image: url('${encodeURI(previewImg).replace(/'/g, "%27")}');` : "";
+          const author = mod.submitterName || mod._aSubmitter?._sName || "GameBanana";
+          const title = mod.name || mod._sName || `Mod #${mod.id || mod._idRow}`;
+          const rawDesc = mod.description || mod._sDescription || mod._sText || "";
+          const plainDesc = htmlToPlainText(rawDesc) || t("gb_desc_empty");
+          const installStatus = getModInstallStatus(mod);
+
+          let statusBadgeHtml = "";
+          let controlsHtml = "";
+
+          if (!installStatus.installed) {
+            statusBadgeHtml = `<span class="feature-status-badge not-installed"><span class="feature-status-badge-dot"></span>${t('features_status_not_installed')}</span>`;
+            controlsHtml = `
+              <button type="button" class="btn-primary feature-btn-download">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>${t('features_btn_download')}</span>
+              </button>
+              <button type="button" class="btn-secondary feature-btn-view" title="${t('features_view_btn')}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            `;
+          } else if (installStatus.active) {
+            statusBadgeHtml = `<span class="feature-status-badge active"><span class="feature-status-badge-dot"></span>${t('features_status_active')}</span>`;
+            controlsHtml = `
+              <label class="toggle-switch" title="${t('features_btn_disable')}">
+                <input type="checkbox" class="feature-toggle-checkbox" checked>
+                <span class="toggle-slider"></span>
+              </label>
+              <button type="button" class="btn-secondary feature-btn-view" title="${t('features_view_btn')}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+              <button type="button" class="feature-btn-delete-item" title="${t('features_btn_delete_disk')}">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              </button>
+            `;
+          } else {
+            statusBadgeHtml = `<span class="feature-status-badge inactive"><span class="feature-status-badge-dot"></span>${t('features_status_inactive')}</span>`;
+            controlsHtml = `
+              <label class="toggle-switch" title="${t('features_btn_enable')}">
+                <input type="checkbox" class="feature-toggle-checkbox">
+                <span class="toggle-slider"></span>
+              </label>
+              <button type="button" class="btn-secondary feature-btn-view" title="${t('features_view_btn')}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+              <button type="button" class="feature-btn-delete-item" title="${t('features_btn_delete_disk')}">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              </button>
+            `;
+          }
+
+          let optionsHtml = "";
+          if (installStatus.installed && installStatus.variations.length > 1) {
+            optionsHtml = `
+              <div class="feature-options-row">
+                <span class="feature-options-label">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1.51 1 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                  <span>${t('features_options')}:</span>
+                </span>
+                <div class="feature-options-list">
+                  ${installStatus.variations.map((vName) => {
+                    const isChecked = installStatus.activeOptions.includes(vName);
+                    return `
+                      <label class="feature-option-checkbox-label" title="${vName}">
+                        <input type="checkbox" class="feature-option-checkbox" data-var="${encodeURIComponent(vName)}" ${isChecked ? "checked" : ""}>
+                        <span class="feature-option-checkbox-custom"></span>
+                        <span class="feature-option-text">${vName}</span>
+                      </label>
+                    `;
+                  }).join("")}
+                </div>
+              </div>
+            `;
+          }
+
+          row.innerHTML = `
+            <div class="feature-item-thumb" style="${bgStyle}">
+              <div class="feature-item-view-overlay" title="${t('features_view_btn')}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </div>
+            </div>
+            <div class="feature-item-info">
+              <div class="feature-item-title-row">
+                <span class="feature-item-title">${title}</span>
+                ${statusBadgeHtml}
+              </div>
+              <div class="feature-item-desc">${plainDesc}</div>
+              <div class="feature-item-meta">
+                <span class="feature-item-author">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                  <span>${author}</span>
+                </span>
+              </div>
+              ${optionsHtml}
+            </div>
+            <div class="feature-item-controls">
+              ${controlsHtml}
+            </div>
+          `;
+
+          const authorSpan = row.querySelector(".feature-item-author span");
+          fetchModInfoFromGB(mod).then((info) => {
+            if (info && info.author) {
+              mod.author = info.author;
+              mod.submitterName = info.author;
+              if (info.submitter) mod._aSubmitter = info.submitter;
+              if (authorSpan) authorSpan.textContent = info.author;
+            }
+          });
+
+          row.querySelectorAll(".feature-option-checkbox").forEach((cb) => {
+            cb.onchange = (e) => {
+              e.stopPropagation();
+              if (installStatus.folderName) {
+                const checkedBoxes = row.querySelectorAll(".feature-option-checkbox:checked");
+                const selected = Array.from(checkedBoxes).map((el) => decodeURIComponent(el.dataset.var));
+                modManager.setModActiveOptions(currentSettings.xxmiPath, installStatus.folderName, selected);
+                renderFeaturesList();
+              }
+            };
+          });
+
+          const openModalAction = () => {
+            const modId = mod.id || mod._idRow;
+            let previewMedia = mod._aPreviewMedia;
+            if (!previewMedia && mod.previewUrl) {
+              const lastSlash = mod.previewUrl.lastIndexOf("/");
+              if (lastSlash !== -1) {
+                previewMedia = {
+                  _aImages: [{
+                    _sBaseUrl: mod.previewUrl.substring(0, lastSlash),
+                    _sFile: mod.previewUrl.substring(lastSlash + 1)
+                  }]
+                };
+              }
+            }
+            const modObj = {
+              _idRow: modId,
+              _sName: mod.name || mod._sName,
+              _sProfileUrl: mod.profileUrl || mod._sProfileUrl || `https://gamebanana.com/mods/${modId}`,
+              _aPreviewMedia: previewMedia,
+              _aSubmitter: mod._aSubmitter || (mod.author ? { _sName: mod.author } : null),
+              _sDescription: mod.description || mod._sDescription || "",
+            };
+            openGBModal(modObj);
+          };
+
+          const thumbEl = row.querySelector(".feature-item-thumb");
+          if (thumbEl) {
+            thumbEl.onclick = openModalAction;
+          }
+
+          const viewBtn = row.querySelector(".feature-btn-view");
+          if (viewBtn) {
+            viewBtn.onclick = openModalAction;
+          }
+
+          const downloadBtn = row.querySelector(".feature-btn-download");
+          if (downloadBtn) {
+            downloadBtn.onclick = openModalAction;
+          }
+
+          const toggleCheckbox = row.querySelector(".feature-toggle-checkbox");
+          if (toggleCheckbox && installStatus.folderName) {
+            toggleCheckbox.onchange = (e) => {
+              modManager.toggleMod(currentSettings.xxmiPath, installStatus.folderName, installStatus.active);
+              renderFeaturesList();
+            };
+          }
+
+          const deleteBtn = row.querySelector(".feature-btn-delete-item");
+          if (deleteBtn && installStatus.folderName) {
+            deleteBtn.onclick = (e) => {
+              e.stopPropagation();
+              const confirmMsg = t("features_delete_confirm", { name: title });
+              customConfirm(confirmMsg, () => {
+                modManager.deleteMod(currentSettings.xxmiPath, installStatus.folderName, installStatus.active);
+                renderFeaturesList();
+              });
+            };
+          }
+
+          listContainer.appendChild(row);
+        });
+      };
+
+      renderFeaturesList();
+    };
+
+    initFeaturesTab();
 
     if (themeSelect) {
       themeSelect.addEventListener("change", () => {
@@ -3893,6 +6188,8 @@ document.addEventListener("DOMContentLoaded", () => {
       SplashManager.setProgress(45, t("splash_status_init"));
     }
 
+    const downloadTabPromise = preloadDownloadTab();
+
     const catalogPromise = SideMenuDownload.fetchAndCacheCatalog()
       .then(() => {
         modManager.loadCatalog(true);
@@ -3902,7 +6199,7 @@ document.addEventListener("DOMContentLoaded", () => {
       })
       .catch(() => { });
 
-    Promise.all([catalogPromise, loadPage("installed")]).then(() => {
+    Promise.all([catalogPromise, downloadTabPromise, loadPage("installed")]).then(() => {
       updateActiveSidebarIndicator();
       if (typeof SplashManager !== "undefined") {
         SplashManager.setProgress(100, t("splash_status_ready"));

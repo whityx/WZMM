@@ -11,6 +11,10 @@ class SideMenuDownload {
     this.t = options.t || ((k) => k);
     this.currentLang = options.language || "ru";
 
+    this.favoriteAuthors = Array.isArray(options.favoriteAuthors) ? [...options.favoriteAuthors] : [];
+    this.selectedAuthor = options.selectedAuthor || null;
+    this.onToggleFavoriteAuthor = options.onToggleFavoriteAuthor || null;
+
     this.selectedCategoryId = null;
     this.selectedCategoryName = null;
     this.selectedSort = options.currentSort || "default";
@@ -379,10 +383,10 @@ class SideMenuDownload {
           <div class="gb-filter-section">
             <div class="gb-section-header">
               <label class="gb-filter-label">${t("gb_filter_categories_title")}</label>
-              <button class="gb-reset-filter-btn" id="gb-reset-filter-btn" style="display: ${this.selectedCategoryId !== null ? "block" : "none"};">${t("gb_filter_reset")}</button>
+              <button class="gb-reset-filter-btn" id="gb-reset-filter-btn" style="display: ${this.selectedCategoryId !== null || this.selectedAuthor !== null ? "block" : "none"};">${t("gb_filter_reset")}</button>
             </div>
 
-            <div class="gb-cat-nav-item ${this.selectedCategoryId === null ? "active" : ""}" data-id="all">
+            <div class="gb-cat-nav-item ${this.selectedCategoryId === null && this.selectedAuthor === null ? "active" : ""}" data-id="all">
               <div class="gb-cat-left">
                 <svg class="gb-cat-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -392,10 +396,11 @@ class SideMenuDownload {
             </div>
 
             <div class="gb-subcat-search-box">
-              <input type="text" id="gb-drawer-search" class="gb-subcat-search-input" placeholder="${t("gb_filter_search_char")}">
+              <input type="text" id="gb-drawer-search" class="gb-subcat-search-input" placeholder="${t("gb_filter_search_char_or_author") || t("gb_filter_search_char")}">
             </div>
 
             <div class="gb-categories-tree" id="gb-categories-tree">
+              ${this.renderFavoriteAuthorsNodeHtml()}
               ${this.renderCategoriesTreeHtml()}
             </div>
           </div>
@@ -465,15 +470,144 @@ class SideMenuDownload {
     }).join("");
   }
 
+  renderFavoriteAuthorsNodeHtml() {
+    const t = this.t;
+    const authors = this.favoriteAuthors || [];
+    const count = authors.length;
+    const isExpanded = count > 0;
+
+    let listHtml = "";
+    if (count === 0) {
+      listHtml = `
+        <div class="gb-subcat-group gb-fav-authors-group">
+          <div class="gb-fav-author-empty-item">${t("gb_fav_authors_empty")}</div>
+        </div>
+      `;
+    } else {
+      listHtml = `
+        <div class="gb-subcat-group gb-fav-authors-group">
+          ${authors.map(author => {
+            const isAuthorActive = this.selectedAuthor && (
+              (author.id && String(this.selectedAuthor.id) === String(author.id)) ||
+              (author.name && this.selectedAuthor.name === author.name)
+            );
+            const avatarSrc = author.avatar || "icons/cat.jpg";
+            const aName = author.name || "";
+            const aId = author.id !== undefined && author.id !== null ? author.id : "";
+            return `
+              <div class="gb-subcat-row gb-author-subcat-row ${isAuthorActive ? "active" : ""}" data-author-id="${aId}" data-author-name="${aName}">
+                <div class="gb-subcat-left">
+                  <img class="gb-avatar-img gb-author-avatar-img" src="${avatarSrc}" alt="" onerror="this.onerror=null; this.src='icons/cat.jpg';">
+                  <span class="gb-subcat-name">${aName}</span>
+                </div>
+                <button class="gb-author-remove-btn" type="button" data-author-id="${aId}" data-author-name="${aName}" title="${t("gb_fav_author_remove")}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="gb-category-node gb-fav-authors-node has-sub ${isExpanded ? "expanded" : ""}" id="gb-fav-authors-tree-node">
+        <div class="gb-category-row gb-fav-authors-node-row" data-type="fav-authors-header">
+          <div class="gb-cat-left">
+            <svg class="gb-cat-icon-svg gb-fav-star-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            <span class="gb-category-name">${t("gb_fav_authors_title")}</span>
+          </div>
+          <div class="gb-cat-right">
+            <span class="gb-mod-count-badge gb-fav-count-badge">${count}</span>
+            <button class="gb-node-arrow" type="button">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+          </div>
+        </div>
+        ${listHtml}
+      </div>
+    `;
+  }
+
+  updateFavoriteAuthorsListUI() {
+    if (typeof document === "undefined") return;
+    const container = document.getElementById(this.containerId);
+    if (!container) return;
+    const existingNode = container.querySelector("#gb-fav-authors-tree-node");
+    if (existingNode) {
+      const temp = document.createElement("div");
+      temp.innerHTML = this.renderFavoriteAuthorsNodeHtml();
+      const newNode = temp.firstElementChild;
+      existingNode.replaceWith(newNode);
+      this.attachFavAuthorEvents();
+    } else {
+      this.updateSubcategoriesListUI();
+    }
+  }
+
   updateSubcategoriesListUI() {
     if (typeof document === "undefined") return;
     const container = document.getElementById(this.containerId);
     if (!container) return;
     const tree = container.querySelector("#gb-categories-tree");
     if (tree) {
-      tree.innerHTML = this.renderCategoriesTreeHtml();
+      tree.innerHTML = this.renderFavoriteAuthorsNodeHtml() + this.renderCategoriesTreeHtml();
       this.attachTreeEvents();
+      this.attachFavAuthorEvents();
     }
+  }
+
+  attachFavAuthorEvents() {
+    const container = document.getElementById(this.containerId);
+    if (!container) return;
+
+    const node = container.querySelector("#gb-fav-authors-tree-node");
+    if (!node) return;
+
+    const headerRow = node.querySelector(".gb-fav-authors-node-row");
+    if (headerRow) {
+      headerRow.addEventListener("click", () => {
+        node.classList.toggle("expanded");
+      });
+    }
+
+    const authorRows = node.querySelectorAll(".gb-author-subcat-row");
+    authorRows.forEach(row => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".gb-author-remove-btn")) return;
+        const aId = row.dataset.authorId;
+        const aName = row.dataset.authorName;
+        const found = (this.favoriteAuthors || []).find(a => (aId && String(a.id) === String(aId)) || (aName && a.name === aName)) || {
+          id: aId ? parseInt(aId) : null,
+          name: aName
+        };
+        this.setAuthor(found);
+        this.toggle(false);
+      });
+    });
+
+    const removeBtns = node.querySelectorAll(".gb-author-remove-btn");
+    removeBtns.forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const aId = btn.dataset.authorId;
+        const aName = btn.dataset.authorName;
+        const found = (this.favoriteAuthors || []).find(a => (aId && String(a.id) === String(aId)) || (aName && a.name === aName)) || {
+          id: aId ? parseInt(aId) : null,
+          name: aName
+        };
+        if (typeof this.onToggleFavoriteAuthor === "function") {
+          this.onToggleFavoriteAuthor(found);
+        }
+      });
+    });
   }
 
   attachEvents() {
@@ -508,7 +642,7 @@ class SideMenuDownload {
     const allBtn = container.querySelector('[data-id="all"]');
     if (allBtn) {
       allBtn.addEventListener("click", () => {
-        this.setCategory(null, null);
+        this.resetFilters();
         this.toggle(false);
       });
     }
@@ -516,7 +650,7 @@ class SideMenuDownload {
     const resetBtn = container.querySelector("#gb-reset-filter-btn");
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
-        this.setCategory(null, null);
+        this.resetFilters();
         this.toggle(false);
       });
     }
@@ -532,7 +666,7 @@ class SideMenuDownload {
           if (subRows.length > 0) {
             let matchedCount = 0;
             subRows.forEach(row => {
-              const name = (row.dataset.name || "").toLowerCase();
+              const name = (row.dataset.name || row.dataset.authorName || "").toLowerCase();
               const locName = (row.dataset.localizedName || "").toLowerCase();
               const matches = !val || name.includes(val) || locName.includes(val);
               row.style.display = matches ? "flex" : "none";
@@ -561,6 +695,7 @@ class SideMenuDownload {
     }
 
     this.attachTreeEvents();
+    this.attachFavAuthorEvents();
 
     if (typeof CustomDropdown !== "undefined") {
       CustomDropdown.initAll(container);
@@ -571,7 +706,7 @@ class SideMenuDownload {
     const container = document.getElementById(this.containerId);
     if (!container) return;
 
-    const rootRows = container.querySelectorAll(".gb-category-row");
+    const rootRows = container.querySelectorAll(".gb-category-row:not(.gb-fav-authors-node-row)");
     rootRows.forEach(row => {
       row.addEventListener("click", (e) => {
         const catId = parseInt(row.dataset.id);
@@ -596,7 +731,7 @@ class SideMenuDownload {
       });
     });
 
-    const subcatRows = container.querySelectorAll(".gb-subcat-row");
+    const subcatRows = container.querySelectorAll(".gb-subcat-row:not(.gb-author-subcat-row)");
     subcatRows.forEach(row => {
       row.addEventListener("click", () => {
         const subId = parseInt(row.dataset.id);
@@ -607,37 +742,80 @@ class SideMenuDownload {
     });
   }
 
-  setCategory(id, name) {
-    this.selectedCategoryId = id;
-    this.selectedCategoryName = name;
+  updateActiveItemUI() {
+    if (typeof document === "undefined") return;
+    const container = document.getElementById(this.containerId);
+    if (!container) return;
 
-    if (typeof document !== "undefined") {
-      const container = document.getElementById(this.containerId);
-      if (container) {
-        container.querySelectorAll(".gb-cat-nav-item, .gb-category-row, .gb-subcat-row").forEach(el => {
-          el.classList.remove("active");
-        });
+    container.querySelectorAll(".gb-cat-nav-item, .gb-category-row, .gb-subcat-row").forEach(el => {
+      el.classList.remove("active");
+    });
 
-        if (id === null) {
-          const allBtn = container.querySelector('[data-id="all"]');
-          if (allBtn) allBtn.classList.add("active");
-        } else {
-          const active = container.querySelector(`[data-id="${id}"]`);
-          if (active) {
-            active.classList.add("active");
-            const parentNode = active.closest(".gb-category-node");
+    const hasActive = this.selectedCategoryId !== null || this.selectedAuthor !== null;
+
+    if (!hasActive) {
+      const allBtn = container.querySelector('[data-id="all"]');
+      if (allBtn) allBtn.classList.add("active");
+    } else {
+      if (this.selectedCategoryId !== null) {
+        const activeCat = container.querySelector(`[data-id="${this.selectedCategoryId}"]`);
+        if (activeCat) {
+          activeCat.classList.add("active");
+          const parentNode = activeCat.closest(".gb-category-node");
+          if (parentNode) parentNode.classList.add("expanded");
+        }
+      }
+      if (this.selectedAuthor) {
+        const authorRows = container.querySelectorAll(".gb-author-subcat-row");
+        authorRows.forEach(row => {
+          const matchId = this.selectedAuthor.id && String(row.dataset.authorId) === String(this.selectedAuthor.id);
+          const matchName = this.selectedAuthor.name && row.dataset.authorName === this.selectedAuthor.name;
+          if (matchId || matchName) {
+            row.classList.add("active");
+            const parentNode = row.closest(".gb-category-node");
             if (parentNode) parentNode.classList.add("expanded");
           }
-        }
-
-        const resetBtn = container.querySelector("#gb-reset-filter-btn");
-        if (resetBtn) {
-          resetBtn.style.display = id === null ? "none" : "block";
-        }
+        });
       }
     }
 
+    const resetBtn = container.querySelector("#gb-reset-filter-btn");
+    if (resetBtn) {
+      resetBtn.style.display = hasActive ? "block" : "none";
+    }
+  }
+
+  setCategory(id, name) {
+    this.selectedCategoryId = id;
+    this.selectedCategoryName = name;
+    this.updateActiveItemUI();
     this.triggerFilterChange();
+  }
+
+  setAuthor(author) {
+    this.selectedAuthor = author;
+    this.updateActiveItemUI();
+    this.triggerFilterChange();
+  }
+
+  resetFilters() {
+    this.selectedCategoryId = null;
+    this.selectedCategoryName = null;
+    this.selectedAuthor = null;
+    this.updateActiveItemUI();
+    this.triggerFilterChange();
+  }
+
+  setFavoriteAuthors(list) {
+    this.favoriteAuthors = Array.isArray(list) ? [...list] : [];
+    if (this.selectedAuthor) {
+      const stillExists = this.favoriteAuthors.some(a => (this.selectedAuthor.id && String(a.id) === String(this.selectedAuthor.id)) || (this.selectedAuthor.name && a.name === this.selectedAuthor.name));
+      if (!stillExists) {
+        this.selectedAuthor = null;
+      }
+    }
+    this.updateFavoriteAuthorsListUI();
+    this.updateActiveItemUI();
   }
 
   triggerFilterChange() {
@@ -645,6 +823,7 @@ class SideMenuDownload {
       this.onFilterChange({
         categoryId: this.selectedCategoryId,
         categoryName: this.selectedCategoryName,
+        author: this.selectedAuthor,
         sort: this.selectedSort,
         nsfwMode: this.nsfwMode
       });

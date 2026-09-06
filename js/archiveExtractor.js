@@ -63,11 +63,16 @@ class ArchiveExtractor {
   }
 
   static getSevenZipPath() {
-    if (sevenZipPath && fs.existsSync(sevenZipPath)) {
+    let p = sevenZipPath;
+    if (p && p.includes("app.asar")) {
+      const unpacked = p.replace("app.asar", "app.asar.unpacked");
+      if (fs.existsSync(unpacked)) p = unpacked;
+    }
+    if (p && fs.existsSync(p)) {
       try {
-        if (isLinux) fs.chmodSync(sevenZipPath, 0o755);
+        if (isLinux) fs.chmodSync(p, 0o755);
       } catch (e) { }
-      return sevenZipPath;
+      return p;
     }
     return null;
   }

@@ -730,7 +730,7 @@ class ModManager {
     return defaultMeta;
   }
 
-  getMods(xxmiPath, filter = "all", searchQuery = "", characterFilter = "all", currentLang = "ru") {
+  getMods(xxmiPath, filter = "all", searchQuery = "", characterFilter = "all", currentLang = "ru", usefulMods = []) {
     if (!xxmiPath || !fs.existsSync(xxmiPath)) {
       return { validPath: false, totalCount: 0, characters: [], mods: [] };
     }
@@ -752,6 +752,40 @@ class ModManager {
     for (const [key, value] of Object.entries(parsedDowlinks)) {
       dowlinksLower[key.trim().toLowerCase()] = value;
     }
+
+    const usefulModIds = new Set();
+    const usefulModNames = new Set();
+    if (Array.isArray(usefulMods)) {
+      usefulMods.forEach((um) => {
+        if (um) {
+          if (um.id || um._idRow) usefulModIds.add(String(um.id || um._idRow));
+          if (um.name || um._sName) usefulModNames.add(String(um.name || um._sName).trim().toLowerCase());
+        }
+      });
+    }
+
+    const isUsefulIgnored = (folderName) => {
+      if (usefulModNames.size === 0 && usefulModIds.size === 0) return false;
+      const cleanFolderName = folderName.trim().toLowerCase();
+      if (usefulModNames.has(cleanFolderName)) return true;
+      const normFolder = cleanFolderName.replace(/[^a-z0-9]/gi, "");
+      if (normFolder.length >= 3) {
+        for (const un of usefulModNames) {
+          if (un && un.length >= 3) {
+            const normUn = un.replace(/[^a-z0-9]/gi, "");
+            if (normFolder === normUn || (normUn.length >= 4 && normFolder.startsWith(normUn))) {
+              return true;
+            }
+          }
+        }
+      }
+      const dowlink = dowlinksLower[cleanFolderName];
+      if (dowlink) {
+        const idMatch = String(dowlink).match(/(?:mods\/)?(\d+)/i);
+        if (idMatch && usefulModIds.has(idMatch[1])) return true;
+      }
+      return false;
+    };
 
     const allDiscoveredMods = [];
     let totalCount = 0;
@@ -802,8 +836,14 @@ class ModManager {
       items.forEach((item) => {
         if (item.isDirectory() && !item.name.startsWith(".") && item.name !== "__MACOSX") {
           if (processedMods.has(item.name)) return;
-          totalCount++;
           processedMods.add(item.name);
+          const isUseful = isUsefulIgnored(item.name);
+          if (filter === "features") {
+            if (!isUseful) return;
+          } else {
+            if (isUseful) return;
+          }
+          totalCount++;
 
           const modPath = path.join(dirPath, item.name);
           const modvarsModPath = path.join(modvarsDir, item.name);
@@ -919,7 +959,6 @@ class ModManager {
               const subP = findPreviewUrl(path.join(modPath, v));
               if (subP) {
                 previewUrl = subP;
-                break;
               }
             }
           }
@@ -950,6 +989,7 @@ class ModManager {
             characterId: charInfo.characterId,
             category: charInfo.category,
             iconUrl: charInfo.iconUrl,
+            author: savedMeta && savedMeta.author ? savedMeta.author : null,
             nsfw: isNsfw,
             paths: folderPaths,
           });
@@ -967,6 +1007,13 @@ class ModManager {
         });
         for (const mEntry of modvarsEntries) {
           if (mEntry.isDirectory() && !mEntry.name.startsWith(".") && !processedMods.has(mEntry.name)) {
+            processedMods.add(mEntry.name);
+            const isUseful = isUsefulIgnored(mEntry.name);
+            if (filter === "features") {
+              if (!isUseful) continue;
+            } else {
+              if (isUseful) continue;
+            }
             const modvarsModPath = path.join(modvarsDir, mEntry.name);
             const varEntries = fs
               .readdirSync(modvarsModPath, { withFileTypes: true })
@@ -1021,6 +1068,7 @@ class ModManager {
                   characterId: charInfo.characterId,
                   category: charInfo.category,
                   iconUrl: charInfo.iconUrl,
+                  author: savedMeta && savedMeta.author ? savedMeta.author : null,
                   nsfw: isNsfw,
                   paths: folderPaths,
                 });
@@ -1067,7 +1115,8 @@ class ModManager {
         const inName = mod.name.toLowerCase().includes(cleanSearch);
         const inChar = (mod.character && mod.character.toLowerCase().includes(cleanSearch)) ||
           (mod.characterLocalized && mod.characterLocalized.toLowerCase().includes(cleanSearch));
-        if (!inName && !inChar) return false;
+        const inAuthor = mod.author && mod.author.toLowerCase().includes(cleanSearch);
+        if (!inName && !inChar && !inAuthor) return false;
       }
 
       if (cleanCharFilter !== "all" && cleanCharFilter !== "") {
@@ -1280,6 +1329,71 @@ class ModManager {
       return true;
     } catch (e) {
       console.error(`Ошибка при смене вариации мода ${modName}:`, e);
+      return false;
+    }
+  }
+
+  setModActiveOptions(xxmiPath, modName, selectedOptions) {
+    if (!xxmiPath || !modName) return false;
+    const modvarsDir = path.join(xxmiPath, "modvars", modName);
+    const modsDir = path.join(xxmiPath, "Mods", modName);
+    const dismodsDir = path.join(xxmiPath, "dismods", modName);
+
+    const isActive = fs.existsSync(modsDir);
+    const isInactive = fs.existsSync(dismodsDir);
+    const targetDir = isActive ? modsDir : (isInactive ? dismodsDir : modsDir);
+
+    if (!fs.existsSync(modvarsDir)) {
+      return false;
+    }
+
+    try {
+      if (fs.existsSync(targetDir)) {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(targetDir, { recursive: true });
+
+      const optionsToApply = Array.isArray(selectedOptions) ? selectedOptions : [];
+      for (const opt of optionsToApply) {
+        const optPath = path.join(modvarsDir, opt);
+        if (fs.existsSync(optPath)) {
+          fs.cpSync(optPath, targetDir, { recursive: true, force: true });
+        }
+      }
+
+      try {
+        fs.writeFileSync(
+          path.join(modvarsDir, ".active_options"),
+          JSON.stringify(optionsToApply),
+          "utf-8"
+        );
+      } catch (e) { }
+
+      if (optionsToApply.length > 0) {
+        try {
+          fs.writeFileSync(
+            path.join(modvarsDir, ".active_var"),
+            optionsToApply[0],
+            "utf-8"
+          );
+        } catch (e) { }
+      } else {
+        const activeVarFile = path.join(modvarsDir, ".active_var");
+        if (fs.existsSync(activeVarFile)) {
+          try {
+            fs.unlinkSync(activeVarFile);
+          } catch (e) { }
+        }
+      }
+
+      const meta = this.getModMetadata(modName, [modvarsDir]);
+      if (meta) {
+        this.setModMetadata(modName, meta, [targetDir, modvarsDir]);
+      }
+
+      return true;
+    } catch (e) {
+      console.error(`Ошибка при настройке опций мода ${modName}:`, e);
       return false;
     }
   }

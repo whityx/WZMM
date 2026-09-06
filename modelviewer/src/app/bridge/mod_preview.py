@@ -1,0 +1,392 @@
+"""Mod preview orchestration behind the JavaScript bridge facade."""
+
+import os
+import traceback
+
+import webview
+
+from core.geometry.buffers import BufferStore
+from core.geometry.conventions import geometry_convention_for
+from core.geometry.mesh_builder import GeometryBlob
+from core.geometry.skinning import (
+    SkinningPreviewError, build_skinning_preview, skinning_source_descriptor,
+)
+from core.resource_paths import safe_resource_path
+from core.textures import encode_texture_file
+from core.mod_discovery import discover_ini_paths
+from core.ini.health import analyze_mod
+from app.mods.analysis import resolved_draws
+from app.mods.texture_save import save_texture_color
+from core.textures.profiles import texture_profile_for
+
+from app.assets import folders as asset_folders
+from app.settings import mod_folders
+from app.mods import loader as mod_loader
+from app.mods import metadata
+from app.runtime import server
+from app.session import edit as edit_session
+
+
+class ModPreview:
+    def __init__(self, access):
+        self._access = access
+        self._active_mesh_keys = {}
+        self._dds_classification_caches = {}
+
+    @staticmethod
+    def _active_texture_source(folder_path, validate=False):
+        publication = server.active_texture_publication(folder_path)
+        if publication is None:
+            return None
+        if not validate:
+            return publication.register
+
+        def register(path, role=None, transform=None):
+            return publication.register(
+                path, role, validate=True, transform=transform)
+
+        return register
+
+    def authoritative_context(self, folder_path, disabled_ini=False):
+        folder_path = self._access.mod_folder(folder_path)
+        ini_paths = (edit_session.document_paths(folder_path)
+                     or discover_ini_paths(folder_path, disabled=disabled_ini))
+        if ini_paths:
+            common = os.path.commonpath(ini_paths)
+            if not os.path.isdir(common):
+                common = os.path.dirname(common)
+            if not mod_folders.is_within(common, folder_path):
+                self._access.authorize_folder(common)
+                folder_path = common
+        edit_session.load_documents(folder_path, ini_paths)
+        overrides = edit_session.overrides_for(folder_path)
+        pending_new_sections = edit_session.new_sections_for(folder_path)
+        context = mod_loader.ModLoadContext(
+            folder_path, ini_paths, edit_session.documents_for(folder_path),
+            metadata.load(folder_path))
+        cache_key = os.path.normcase(os.path.abspath(folder_path))
+        context.dds_classification_cache = \
+            self._dds_classification_caches.setdefault(cache_key, {})
+        try:
+            context.asset_folders = asset_folders.load_registry()
+        except asset_folders.AssetFolderError:
+            # Optional asset configuration must not make an otherwise valid
+            # mod unloadable; the asset UI reports the config error directly.
+            context.asset_folders = []
+        return folder_path, overrides, pending_new_sections, context
+
+    @staticmethod
+    def _semantic_read_error():
+        traceback.print_exc()
+        return {"error": "Unexpected backend error. See the application log for details."}
+
+    def load_mod(self, folder_path, disabled_ini=False):
+        folder_path, overrides, pending_new_sections, context = \
+            self.authoritative_context(folder_path, disabled_ini=disabled_ini)
+        geometry = GeometryBlob()
+        publication = server.begin_texture_publication(folder_path)
+        try:
+            result = mod_loader.load_mod(
+                context=context, overrides=overrides,
+                pending_new_sections=pending_new_sections, geometry=geometry,
+                texture_source=publication.register)
+            if (disabled_ini and isinstance(result, dict)
+                    and not context.ini_paths
+                    and result.get("error") ==
+                    "No active .ini files found in this folder."):
+                result["error"] = "No disabled .ini files found in this folder."
+            if not isinstance(result, dict) or result.get("error"):
+                publication.discard()
+                self._active_mesh_keys.pop(folder_path, None)
+                return result
+
+            saved_metadata = context.metadata
+            result.setdefault("metadata", {})["mesh_names"] = \
+                metadata.hydrate_mesh_names(result, saved_metadata)
+            result["metadata"]["mesh_color_adjustments"] = \
+                metadata.hydrate_mesh_color_adjustments(result, saved_metadata)
+            game_metadata = result.get("metadata", {}).get("game", {})
+            publication.set_game_profile(game_metadata.get("id"))
+            metadata.hydrate_textures(
+                folder_path, result, saved_metadata,
+                texture_source=publication.register,
+                texture_profile=game_metadata.get("id"))
+            controls = result.setdefault("controls", {})
+            metadata.hydrate_present(folder_path, controls.get("present"),
+                                     saved_metadata)
+            server.publish_payload_geometry(result, geometry)
+            publication.commit()
+            self._active_mesh_keys[folder_path] = set(result.get("meshes", {}))
+            return result
+        except Exception:
+            publication.discard()
+            self._active_mesh_keys.pop(folder_path, None)
+            raise
+
+    def get_present_state(self, folder_path):
+        """Return staged PRESENT state without loading geometry or textures."""
+        try:
+            folder_path, overrides, _pending, context = \
+                self.authoritative_context(folder_path)
+            present = mod_loader.load_present_state(context, overrides)
+            metadata.hydrate_present(folder_path, present, context.metadata)
+            return {"present": present}
+        except Exception:
+            return self._semantic_read_error()
+
+    def get_control_state(self, folder_path):
+        """Return staged control semantics without rebuilding the model."""
+        try:
+            folder_path, overrides, pending, context = \
+                self.authoritative_context(folder_path)
+            result = mod_loader.load_control_state(
+                context, overrides, pending,
+                active_mesh_keys=self._active_mesh_keys.get(folder_path))
+            metadata.hydrate_present(
+                folder_path, result["controls"]["present"], context.metadata)
+            return result
+        except Exception:
+            return self._semantic_read_error()
+
+    def get_mesh_semantics(self, folder_path):
+        """Return staged draw visibility semantics without rebuilding meshes."""
+        try:
+            folder_path, overrides, _pending, context = \
+                self.authoritative_context(folder_path)
+            return mod_loader.load_mesh_semantics(
+                context, overrides, self._active_mesh_keys.get(folder_path))
+        except Exception:
+            return self._semantic_read_error()
+
+    def save_texture_color(
+            self, folder_path, tex_key, targets, texture_usage):
+        """Save all captured Color changes that target one physical DDS."""
+        try:
+            folder_path, overrides, _pending, context = \
+                self.authoritative_context(folder_path)
+            result = save_texture_color(
+                context, overrides, self._active_mesh_keys.get(folder_path),
+                tex_key, targets, texture_usage)
+            if result.get("status") == "ok":
+                keys = [
+                    item.get("metadata_key")
+                    for item in (result.get("saved_meshes") or [])
+                    if isinstance(item, dict)
+                ]
+                try:
+                    cleared = metadata.clear_mesh_color_adjustments(
+                        folder_path, keys)
+                    if cleared.get("error"):
+                        result["warning"] = "color_state_reset_failed"
+                except Exception:
+                    result["warning"] = "color_state_reset_failed"
+            return result
+        except Exception:
+            return self._semantic_read_error()
+
+    @staticmethod
+    def _skinning_draws(context, overrides):
+        """Resolve every rendered draw once for the model preview."""
+        return resolved_draws(context, overrides)
+
+    @staticmethod
+    def _decode_skinning_draw(draw, group, mod_dir, buffers,
+                              geometry_convention):
+        paths = [
+            safe_resource_path(mod_dir, group["position_file"]),
+            safe_resource_path(mod_dir, group["texcoord_file"]),
+            safe_resource_path(mod_dir, group["ib_file"]),
+        ]
+        if not all(path and os.path.exists(path) for path in paths):
+            raise SkinningPreviewError(
+                "geometry_not_available",
+                "The rendered draw geometry could not be prepared.")
+        default_streams = buffers.vertex_streams(
+            paths[0], group.get("position_stride"), paths[1],
+            group.get("texcoord_stride"))
+        buffers.raw(paths[2])
+        return build_skinning_preview(
+            draw, group, mod_dir, buffers=buffers,
+            default_streams=default_streams,
+            default_index_size=group.get("index_size", 4),
+            geometry_convention=geometry_convention)
+
+    @staticmethod
+    def _skinning_source_descriptor(draw):
+        return skinning_source_descriptor(draw.skinning_source)
+
+    @staticmethod
+    def _skin_entry(decoded, draw, offset):
+        indices_length = len(decoded.indices)
+        blob = decoded.indices + decoded.weights
+        return ({
+            "status": "ok",
+            "vertex_count": decoded.vertex_count,
+            "influence_count": decoded.influence_count,
+            "bone_ids": list(decoded.bone_ids),
+            "encoding": draw.skinning_source.encoding,
+            "source": ModPreview._skinning_source_descriptor(draw),
+            "data": {
+                "indices": {
+                    "offset": offset,
+                    "length": indices_length,
+                    "type": "u32",
+                },
+                "weights": {
+                    "offset": offset + indices_length,
+                    "length": len(decoded.weights),
+                    "type": "f32",
+                },
+            },
+            "diagnostics": dict(decoded.diagnostics),
+        }, blob)
+
+    def get_model_skinning_preview(self, folder_path):
+        """Decode all active skinned draws through one analyzed model context."""
+        try:
+            folder_path, overrides, _pending, context = \
+                self.authoritative_context(folder_path)
+            saved_bones = metadata.weight_selected_bones(
+                data=context.metadata)
+            parsed, draws = self._skinning_draws(context, overrides)
+            active_mesh_keys = self._active_mesh_keys.get(folder_path)
+            eligible_draws = {
+                key: selected for key, selected in draws.items()
+                if selected[0].skinning_source is not None
+            }
+            requested = (set(active_mesh_keys) if active_mesh_keys is not None
+                         else set(eligible_draws))
+            requested &= set(eligible_draws)
+            meshes = {}
+            pieces = []
+            offset = 0
+            buffers = BufferStore()
+            convention = geometry_convention_for(parsed.game.game)
+            for mesh_key in sorted(requested):
+                selected = eligible_draws.get(mesh_key)
+                if selected is None:
+                    continue
+                draw, group = selected
+                try:
+                    decoded = self._decode_skinning_draw(
+                        draw, group, context.mod_dir, buffers, convention)
+                    entry, blob = self._skin_entry(decoded, draw, offset)
+                except SkinningPreviewError as error:
+                    meshes[mesh_key] = {
+                        "status": "error",
+                        "code": error.code,
+                        "error": error.message,
+                    }
+                    continue
+                except Exception:
+                    traceback.print_exc()
+                    meshes[mesh_key] = {
+                        "status": "error",
+                        "code": "skinning_preview_failed",
+                        "error": "Could not decode skin weights for this mesh.",
+                    }
+                    continue
+                meshes[mesh_key] = entry
+                pieces.append(blob)
+                offset += len(blob)
+
+            if not pieces:
+                return {
+                    "status": "error",
+                    "format_version": 1,
+                    "saved_bones": saved_bones,
+                    "meshes": meshes,
+                    "error": "No active mesh has usable skin weights.",
+                }
+            blob = b"".join(pieces)
+            url = server.publish_geometry(blob, replace=False)
+            return {
+                "status": "ok" if all(
+                    entry.get("status") == "ok" for entry in meshes.values())
+                    else "partial",
+                "format_version": 1,
+                "saved_bones": saved_bones,
+                "data": {"url": url, "length": len(blob)},
+                "meshes": meshes,
+            }
+        except Exception:
+            return self._semantic_read_error()
+
+    def get_diagnostics(self, folder_path):
+        """Return the read-only health scan for the current edit revision."""
+        folder_path = self._access.mod_folder(folder_path)
+        cached = edit_session.cached_diagnostics(folder_path)
+        if cached is not None:
+            return cached
+        ini_paths = edit_session.document_paths(folder_path)
+        if not ini_paths:
+            ini_paths = discover_ini_paths(folder_path)
+            edit_session.load_documents(folder_path, ini_paths)
+        try:
+            report = analyze_mod(
+                folder_path, ini_paths=ini_paths,
+                overrides=edit_session.overrides_for(folder_path),
+                documents=edit_session.documents_for(folder_path))
+            return edit_session.cache_diagnostics(folder_path, report)
+        except Exception:
+            return edit_session.cache_diagnostics(folder_path, {
+                "summary": {"errors": 0, "warnings": 1, "issues": 1,
+                            "unused_files": 0, "unused_resources": 0},
+                "files": {"unreferenced": 0, "inactive_only": 0,
+                          "viewer_only": 0, "referenced": 0},
+                "issues": [{
+                    "code": "health_check_failed", "severity": "warning",
+                    "category": "ini",
+                    "message": "The INI diagnostics could not be completed.",
+                }],
+            })
+
+    def save_mesh_names(self, folder_path, names):
+        return metadata.save_mesh_names(self._access.mod_folder(folder_path), names)
+
+    def save_mesh_textures(self, folder_path, textures):
+        folder_path = self._access.mod_folder(folder_path)
+        result = metadata.save_textures(folder_path, textures)
+        edit_session.invalidate_diagnostics(folder_path)
+        return result
+
+    def save_mesh_color_adjustment(self, folder_path, mesh_key, adjustment):
+        folder_path = self._access.mod_folder(folder_path)
+        return metadata.save_mesh_color_adjustment(
+            folder_path, mesh_key, adjustment)
+
+    def save_weight_selection(self, folder_path, bones):
+        folder_path = self._access.mod_folder(folder_path)
+        return metadata.save_weight_selected_bones(folder_path, bones)
+
+    def save_component_material_kind(self, folder_path, source, component,
+                                     material_kind):
+        folder_path = self._access.mod_folder(folder_path)
+        result = metadata.save_component_material_kind(
+            folder_path, source, component, material_kind)
+        edit_session.invalidate_diagnostics(folder_path)
+        return result
+
+    def pick_texture_file(self, window, folder_path, texture_role=None):
+        """Pick a mod texture using the facade-owned native window."""
+        folder_path = self._access.mod_folder(folder_path)
+        if texture_role not in (None, "normal_map", "light_map", "material_map"):
+            return {"error": "Unknown texture role."}
+        result = window.create_file_dialog(
+            webview.FileDialog.OPEN, directory=folder_path,
+            file_types=("Textures (*.dds;*.png;*.jpg;*.jpeg;*.tga)",))
+        if not result:
+            return None
+        texture_source = self._active_texture_source(
+            folder_path, validate=True)
+        publication = server.active_texture_publication(folder_path)
+        profile = texture_profile_for(
+            publication.game_profile if publication else None)
+        transport_role = texture_role
+        if (texture_role == "normal_map"
+                and profile.normal_transport_role == "normal_data"):
+            transport_role = profile.normal_transport_role
+        encoded = encode_texture_file(
+            folder_path, result[0], transport_role,
+            texture_source=texture_source, texture_profile=profile)
+        return encoded
