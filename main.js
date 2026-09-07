@@ -243,7 +243,7 @@ if (!gotTheLock) {
                 windowsHide: true,
                 env: {
                     ...process.env,
-                    WZMM_THEME: theme || 'amber',
+                    WZMM_THEME: theme || 'purple',
                     WZMM_LANG: lang || 'en',
                     WZMM_THEMES_DIR: themesDir
                 }

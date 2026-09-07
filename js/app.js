@@ -1342,7 +1342,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ];
 
     const detectedLang = detectLaunchLanguage();
-    const defaultSettings = { nsfwMode: "show", language: detectedLang, theme: "amber", favoriteAuthors: [], usefulMods: defaultUsefulMods };
+    const defaultSettings = { nsfwMode: "show", language: detectedLang, theme: "purple", favoriteAuthors: [], usefulMods: defaultUsefulMods };
 
     if (!fs.existsSync(settingsFilePath)) {
       fs.writeFileSync(
@@ -1378,7 +1378,7 @@ document.addEventListener("DOMContentLoaded", () => {
         settings.language = detectedLang;
       }
 
-      settings.theme = mapLegacyTheme(settings.theme || "amber");
+      settings.theme = mapLegacyTheme(settings.theme || "purple");
 
       if (!Array.isArray(settings.favoriteAuthors)) {
         settings.favoriteAuthors = [];
@@ -2467,7 +2467,7 @@ document.addEventListener("DOMContentLoaded", () => {
             windowsHide: true,
             env: {
               ...process.env,
-              WZMM_THEME: (currentSettings && currentSettings.theme) || "amber",
+              WZMM_THEME: (currentSettings && currentSettings.theme) || "purple",
               WZMM_LANG: (currentSettings && currentSettings.language) || "en"
             }
           });

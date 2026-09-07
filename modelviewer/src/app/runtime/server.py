@@ -704,7 +704,7 @@ def _resolve_theme(theme=None):
         except Exception:
             pass
     if not theme:
-        theme = "amber"
+        theme = "purple"
 
     themes_dir = os.environ.get("WZMM_THEMES_DIR")
     possible_files = []
