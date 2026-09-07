@@ -873,3 +873,84 @@ select option:checked,
     padding: 120px 24px 24px;
   }
 }
+
+.dnd-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-modal-overlay, rgba(8, 6, 4, 0.75));
+  backdrop-filter: var(--glass-blur, blur(20px) saturate(160%));
+  -webkit-backdrop-filter: var(--glass-blur, blur(20px) saturate(160%));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-med, 0.3s cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+
+.dnd-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.dnd-overlay-content {
+  background: var(--bg-surface, #16130d);
+  border: 2px dashed var(--accent, #f59e0b);
+  border-radius: var(--radius-lg, 16px);
+  padding: 48px 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  box-shadow: var(--shadow-lg, 0 16px 40px rgba(0, 0, 0, 0.7)), 0 0 40px var(--accent-dim, rgba(245, 158, 11, 0.18));
+  transform: scale(0.92);
+  transition: transform var(--transition-med, 0.3s cubic-bezier(0.2, 0.8, 0.2, 1));
+  text-align: center;
+  max-width: 480px;
+}
+
+.dnd-overlay.active .dnd-overlay-content {
+  transform: scale(1);
+}
+
+.dnd-icon-wrapper {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--accent-dim, rgba(245, 158, 11, 0.18));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent, #f59e0b);
+  box-shadow: 0 0 24px var(--accent-dim, rgba(245, 158, 11, 0.18));
+}
+
+.dnd-icon {
+  width: 36px;
+  height: 36px;
+  animation: dndBounce 1.5s infinite ease-in-out;
+}
+
+@keyframes dndBounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.dnd-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text-primary, #fef3c7);
+  letter-spacing: -0.01em;
+}
+
+.dnd-subtitle {
+  font-size: 0.95rem;
+  color: var(--text-secondary, #d4a373);
+  line-height: 1.4;
+}

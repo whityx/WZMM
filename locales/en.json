@@ -352,5 +352,19 @@
   "installed_bulk_disable_filtered": "Disable Filtered Mods",
   "installed_all_enabled_toast": "Enabled mods: {count}",
   "installed_all_disabled_toast": "Disabled mods: {count}",
-  "installed_bulk_no_mods": "No mods found to perform this action"
+  "installed_bulk_no_mods": "No mods found to perform this action",
+  "dnd_drop_title": "Install Mod",
+  "dnd_drop_subtitle": "Drop archive here to install into local mods",
+  "dnd_extracting": "Installing mod {name}...",
+  "dnd_install_success": "Mod \"{name}\" successfully installed!",
+  "dnd_install_error": "Error installing mod \"{name}\": {error}",
+  "dnd_unsupported_archive": "Only archive files (.zip, .7z, .rar, etc.) are supported",
+  "modal_edit_mod": "Edit",
+  "modal_edit_name_label": "Mod Name",
+  "modal_edit_preview_label": "Preview Image",
+  "modal_edit_choose_image": "Choose File",
+  "modal_edit_desc_label": "Description",
+  "modal_edit_saved": "Changes saved!",
+  "modal_edit_name_exists": "A mod with this name already exists",
+  "modal_edit_name_empty": "Mod name cannot be empty"
 }

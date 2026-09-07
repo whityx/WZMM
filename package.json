@@ -32,7 +32,7 @@
   "build": {
     "appId": "com.whityx.wzmm",
     "productName": "WZMM",
-    "artifactName": "WZMM-0.3.0.${ext}",
+    "artifactName": "WZMM-${version}.${ext}",
     "asar": true,
     "asarUnpack": [
       "**/node_modules/7zip-bin/**/*",
@@ -45,8 +45,8 @@
         "AppImage"
       ],
       "category": "Utility",
-      "executableName": "WZMM-0.3.0",
-      "artifactName": "WZMM-0.3.0.${ext}"
+      "executableName": "WZMM-${version}",
+      "artifactName": "WZMM-${version}.${ext}"
     },
     "win": {
       "target": [
@@ -58,10 +58,10 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "WZMM-0.3.0-Setup.${ext}"
+      "artifactName": "WZMM-${version}-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "WZMM-0.3.0-Portable.${ext}"
+      "artifactName": "WZMM-${version}-Portable.${ext}"
     },
     "files": [
       "**/*",

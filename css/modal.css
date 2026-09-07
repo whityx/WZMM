@@ -1133,6 +1133,100 @@
   color: var(--text-primary, #ffffff);
 }
 
+.btn-edit-char.active-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent, #ffffff);
+}
+
+.btn-edit-char.active-primary:hover {
+  background: var(--accent-hover, var(--accent));
+  border-color: var(--accent-hover, var(--accent));
+}
+
+.modal-edit-panel {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: var(--radius-md, 12px);
+  padding: 16px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.modal-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-edit-field-full {
+  grid-column: 1 / -1;
+}
+
+.modal-edit-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary, #a1a1aa);
+}
+
+.modal-edit-input,
+.modal-edit-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-surface, #141419);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-sm, 8px);
+  padding: 8px 12px;
+  color: var(--text-primary, #ffffff);
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.modal-edit-input:focus,
+.modal-edit-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.modal-edit-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.modal-edit-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-edit-filename {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.modal-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .modal-nsfw-toggle-wrap {
   display: inline-flex;
   align-items: center;

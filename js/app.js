@@ -2240,6 +2240,106 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
+    const editModBtn = document.getElementById("modal-edit-mod-btn");
+    const editPanel = document.getElementById("modal-edit-panel");
+    const editNameInput = document.getElementById("modal-edit-name-input");
+    const editPreviewFile = document.getElementById("modal-edit-preview-file");
+    const editPreviewBtn = document.getElementById("modal-edit-preview-btn");
+    const editPreviewFilename = document.getElementById("modal-edit-preview-filename");
+    const editDescInput = document.getElementById("modal-edit-desc-input");
+    const editSaveBtn = document.getElementById("modal-edit-save-btn");
+    const editCancelBtn = document.getElementById("modal-edit-cancel-btn");
+
+    if (editPanel) {
+      editPanel.style.display = "none";
+    }
+
+    let selectedPreviewFilePath = null;
+
+    if (editModBtn && editPanel) {
+      editModBtn.onclick = () => {
+        const isHidden = editPanel.style.display === "none";
+        editPanel.style.display = isHidden ? "flex" : "none";
+        if (isHidden) {
+          if (editNameInput) editNameInput.value = mod.name;
+          if (editDescInput) editDescInput.value = mod.description || (modManager.getModDescription ? modManager.getModDescription(mod) : "") || "";
+          selectedPreviewFilePath = null;
+          if (editPreviewFilename) editPreviewFilename.textContent = "";
+          if (editNameInput) setTimeout(() => editNameInput.focus(), 100);
+        }
+      };
+    }
+
+    if (editPreviewBtn && editPreviewFile) {
+      editPreviewBtn.onclick = () => {
+        editPreviewFile.value = "";
+        editPreviewFile.click();
+      };
+    }
+
+    if (editPreviewFile) {
+      editPreviewFile.onchange = () => {
+        if (editPreviewFile.files && editPreviewFile.files.length > 0) {
+          const file = editPreviewFile.files[0];
+          const p = (webUtils && typeof webUtils.getPathForFile === "function")
+            ? webUtils.getPathForFile(file)
+            : file.path;
+          if (p) {
+            selectedPreviewFilePath = p;
+            if (editPreviewFilename) editPreviewFilename.textContent = path.basename(p);
+          }
+        }
+      };
+    }
+
+    if (editCancelBtn && editPanel) {
+      editCancelBtn.onclick = () => {
+        editPanel.style.display = "none";
+      };
+    }
+
+    if (editSaveBtn && editPanel) {
+      editSaveBtn.onclick = () => {
+        const newName = (editNameInput ? editNameInput.value : "").trim();
+        if (!newName) {
+          if (window.Toast) window.Toast.warning(t("modal_edit_name_empty"));
+          return;
+        }
+
+        if (newName !== mod.name) {
+          const res = modManager.renameMod(currentSettings.xxmiPath, mod.name, newName);
+          if (!res.success) {
+            if (res.error === "already_exists") {
+              if (window.Toast) window.Toast.warning(t("modal_edit_name_exists"));
+            } else if (window.Toast) {
+              window.Toast.error(res.error);
+            }
+            return;
+          }
+          mod.name = res.newName;
+          document.getElementById("modal-title").textContent = mod.name;
+        }
+
+        if (selectedPreviewFilePath) {
+          const newUrl = modManager.setModPreviewImage(currentSettings.xxmiPath, mod.name, selectedPreviewFilePath);
+          if (newUrl) {
+            mod.previewUrl = newUrl;
+          }
+        }
+
+        const newDesc = editDescInput ? editDescInput.value.trim() : "";
+        modManager.setModDescription(currentSettings.xxmiPath, mod.name, newDesc);
+        mod.description = newDesc;
+
+        editPanel.style.display = "none";
+        updateModalMedia();
+        renderModsGrid();
+        if (window.Toast) {
+          window.Toast.success(t("modal_edit_saved"));
+        }
+      };
+    }
+
     const open3dBtn = document.getElementById("modal-open-3d-btn");
     if (open3dBtn) {
       open3dBtn.onclick = async () => {
@@ -6001,7 +6101,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const checkedBoxes = row.querySelectorAll(".feature-option-checkbox:checked");
                 const selected = Array.from(checkedBoxes).map((el) => decodeURIComponent(el.dataset.var));
                 modManager.setModActiveOptions(currentSettings.xxmiPath, installStatus.folderName, selected);
-                renderFeaturesList();
+                installStatus.activeOptions = selected;
               }
             };
           });
@@ -6049,8 +6149,26 @@ document.addEventListener("DOMContentLoaded", () => {
           const toggleCheckbox = row.querySelector(".feature-toggle-checkbox");
           if (toggleCheckbox && installStatus.folderName) {
             toggleCheckbox.onchange = (e) => {
-              modManager.toggleMod(currentSettings.xxmiPath, installStatus.folderName, installStatus.active);
-              renderFeaturesList();
+              const newActive = toggleCheckbox.checked;
+              const success = modManager.toggleMod(
+                currentSettings.xxmiPath,
+                installStatus.folderName,
+                installStatus.active
+              );
+              if (success) {
+                installStatus.active = newActive;
+                const badgeEl = row.querySelector(".feature-status-badge");
+                if (badgeEl) {
+                  badgeEl.className = `feature-status-badge ${newActive ? "active" : "inactive"}`;
+                  badgeEl.innerHTML = `<span class="feature-status-badge-dot"></span>${newActive ? t("features_status_active") : t("features_status_inactive")}`;
+                }
+                const lbl = toggleCheckbox.closest("label");
+                if (lbl) {
+                  lbl.title = newActive ? t("features_btn_disable") : t("features_btn_enable");
+                }
+              } else {
+                toggleCheckbox.checked = !newActive;
+              }
             };
           }
 
@@ -6177,7 +6295,228 @@ document.addEventListener("DOMContentLoaded", () => {
     startOpt.launch(currentSettings, t);
   });
 
+  const initDragAndDrop = () => {
+    let dragCounter = 0;
+    const overlay = document.getElementById("dnd-overlay");
 
+    const getFilePath = (file) => {
+      if (!file) return null;
+      if (typeof webUtils !== "undefined" && webUtils && typeof webUtils.getPathForFile === "function") {
+        try {
+          const p = webUtils.getPathForFile(file);
+          if (p) return p;
+        } catch (err) { }
+      }
+      if (file.path) return file.path;
+      return null;
+    };
+
+    window.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter++;
+      if (overlay) {
+        overlay.classList.add("active");
+      }
+    });
+
+    window.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "copy";
+      }
+      if (overlay && !overlay.classList.contains("active")) {
+        overlay.classList.add("active");
+      }
+    });
+
+    window.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        if (overlay) {
+          overlay.classList.remove("active");
+        }
+      }
+    });
+
+    window.addEventListener("dragend", () => {
+      dragCounter = 0;
+      if (overlay) {
+        overlay.classList.remove("active");
+      }
+    });
+
+    window.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter = 0;
+      if (overlay) {
+        overlay.classList.remove("active");
+      }
+
+      const dt = e.dataTransfer;
+      if (!dt) return;
+
+      let rawFiles = [];
+      if (dt.items && dt.items.length > 0) {
+        for (let i = 0; i < dt.items.length; i++) {
+          const item = dt.items[i];
+          if (item.kind === "file") {
+            const f = item.getAsFile();
+            if (f) rawFiles.push(f);
+          }
+        }
+      }
+      if (rawFiles.length === 0 && dt.files && dt.files.length > 0) {
+        rawFiles = Array.from(dt.files);
+      }
+      if (rawFiles.length === 0) return;
+
+      const filePaths = rawFiles
+        .map((f) => getFilePath(f))
+        .filter((p) => p && typeof p === "string");
+
+      const validPaths = filePaths.filter((p) => {
+        if (!fs.existsSync(p)) return false;
+        return ArchiveExtractor.isArchiveFile(p) || fs.statSync(p).isDirectory();
+      });
+
+      if (validPaths.length === 0) {
+        if (window.Toast) {
+          window.Toast.warning(t("dnd_unsupported_archive"));
+        }
+        return;
+      }
+
+      if (!currentSettings || !currentSettings.xxmiPath) {
+        if (window.Toast) {
+          window.Toast.warning(t("dl_need_path"));
+        }
+        return;
+      }
+
+      const xxmiPath = currentSettings.xxmiPath;
+      let installedCount = 0;
+
+      for (const srcPath of validPaths) {
+        let baseName = path.basename(srcPath);
+        for (const ext of ArchiveExtractor.ARCHIVE_EXTENSIONS) {
+          if (baseName.toLowerCase().endsWith(ext)) {
+            baseName = baseName.slice(0, -ext.length);
+            break;
+          }
+        }
+        let safeModFolder = baseName.replace(/[<>:"/\\|?*]+/g, "").trim();
+        if (!safeModFolder) safeModFolder = "Mod_" + Date.now();
+
+        const modsDir = path.join(xxmiPath, "Mods");
+        const dismodsDir = path.join(xxmiPath, "dismods");
+        const modvarsDir = path.join(xxmiPath, "modvars");
+        const targetModFolder = path.join(modsDir, safeModFolder);
+        const dismodFolder = path.join(dismodsDir, safeModFolder);
+        const modvarsModFolder = path.join(modvarsDir, safeModFolder);
+        const tempExtractDir = path.join(xxmiPath, ".temp_dnd_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7));
+
+        try {
+          if (!fs.existsSync(modsDir)) {
+            fs.mkdirSync(modsDir, { recursive: true });
+          }
+
+          const isDir = fs.statSync(srcPath).isDirectory();
+
+          if (isDir) {
+            if (!fs.existsSync(tempExtractDir)) {
+              fs.mkdirSync(tempExtractDir, { recursive: true });
+            }
+            fs.cpSync(srcPath, tempExtractDir, { recursive: true, force: true });
+          } else {
+            if (!fs.existsSync(tempExtractDir)) {
+              fs.mkdirSync(tempExtractDir, { recursive: true });
+            }
+            await ArchiveExtractor.extractArchive(srcPath, tempExtractDir);
+            await ArchiveExtractor.extractRecursively(tempExtractDir);
+          }
+
+          modManager.flattenDirectory(tempExtractDir);
+          modManager.cleanSystemFiles(tempExtractDir);
+
+          if (!ArchiveExtractor.hasExtractedFiles(tempExtractDir)) {
+            throw new Error(t("dl_unpack_err"));
+          }
+
+          if (fs.existsSync(dismodFolder)) {
+            try {
+              fs.rmSync(dismodFolder, { recursive: true, force: true });
+            } catch (err) { }
+          }
+
+          if (fs.existsSync(targetModFolder)) {
+            try {
+              fs.rmSync(targetModFolder, { recursive: true, force: true });
+            } catch (err) { }
+          }
+
+          try {
+            fs.renameSync(tempExtractDir, targetModFolder);
+          } catch (renameErr) {
+            fs.cpSync(tempExtractDir, targetModFolder, { recursive: true, force: true });
+            try {
+              fs.rmSync(tempExtractDir, { recursive: true, force: true });
+            } catch (rmErr) { }
+          }
+
+          const detected = modManager.detectCharacter(
+            safeModFolder,
+            [targetModFolder, modvarsModFolder],
+            currentSettings.language || "ru"
+          );
+
+          modManager.setModMetadata(
+            safeModFolder,
+            {
+              name: safeModFolder,
+              character: detected.character,
+              characterId: detected.characterId,
+              category: detected.category,
+              author: null,
+            },
+            [targetModFolder, modvarsModFolder]
+          );
+
+          installedCount++;
+          if (window.Toast) {
+            window.Toast.success(t("dnd_install_success", { name: safeModFolder }));
+          }
+        } catch (err) {
+          if (window.Toast) {
+            window.Toast.error(t("dnd_install_error", { name: safeModFolder, error: err.message || err }));
+          }
+        } finally {
+          if (fs.existsSync(tempExtractDir)) {
+            try {
+              fs.rmSync(tempExtractDir, { recursive: true, force: true });
+            } catch (cleanupErr) { }
+          }
+        }
+      }
+
+      if (installedCount > 0) {
+        const activePage = document.querySelector(".sidebar-item.active");
+        if (activePage && activePage.dataset.page === "installed") {
+          renderModsGrid();
+          if (installedFilterDrawer) {
+            installedFilterDrawer.render();
+          }
+        }
+      }
+    });
+  };
+
+  initDragAndDrop();
 
   let appInitialized = false;
   const startAppInit = () => {

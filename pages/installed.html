@@ -142,6 +142,13 @@
             <div class="installed-modal-header">
                 <div class="installed-modal-title-row">
                     <h3 id="modal-title" class="modal-title">Название мода</h3>
+                    <button id="modal-edit-mod-btn" class="btn-edit-char" title="Редактировать мод">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 20h9"></path>
+                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                        </svg>
+                        <span data-i18n-text="modal_edit_mod">Редактировать</span>
+                    </button>
                     <button id="modal-status" class="modal-status-badge" type="button" title="Состояние мода">
                         <span class="modal-status-dot"></span>
                         <span id="modal-status-text" class="modal-status-text"></span>
@@ -154,6 +161,37 @@
                         </svg>
                         <span data-i18n-text="modal_open_3d">3D Просмотр</span>
                     </button>
+                </div>
+                <div id="modal-edit-panel" class="modal-edit-panel" style="display: none;">
+                    <div class="modal-edit-grid">
+                        <div class="modal-edit-field">
+                            <label class="modal-edit-label" data-i18n-text="modal_edit_name_label">Название мода</label>
+                            <input type="text" id="modal-edit-name-input" class="modal-edit-input" placeholder="Название мода...">
+                        </div>
+                        <div class="modal-edit-field">
+                            <label class="modal-edit-label" data-i18n-text="modal_edit_preview_label">Превью изображение</label>
+                            <div class="modal-edit-preview-row">
+                                <input type="file" id="modal-edit-preview-file" accept="image/*" style="display: none;">
+                                <button id="modal-edit-preview-btn" class="btn-edit-char" type="button">
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                        <polyline points="21 15 16 10 5 21"></polyline>
+                                    </svg>
+                                    <span data-i18n-text="modal_edit_choose_image">Выбрать файл</span>
+                                </button>
+                                <span id="modal-edit-preview-filename" class="modal-edit-filename"></span>
+                            </div>
+                        </div>
+                        <div class="modal-edit-field modal-edit-field-full">
+                            <label class="modal-edit-label" data-i18n-text="modal_edit_desc_label">Описание</label>
+                            <textarea id="modal-edit-desc-input" class="modal-edit-textarea" rows="3" placeholder="Введите описание мода..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-edit-actions">
+                        <button id="modal-edit-save-btn" class="btn-edit-char active-primary" data-i18n-text="settings_save">Сохранить</button>
+                        <button id="modal-edit-cancel-btn" class="btn-edit-char" data-i18n-text="groups_cancel_btn">Отмена</button>
+                    </div>
                 </div>
                 <div id="modal-author-row" class="modal-author-row" style="display: none;">
                     <span class="modal-author-label" data-i18n-text="gb_author_by">Автор:</span>

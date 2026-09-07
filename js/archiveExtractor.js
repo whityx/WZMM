@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+const { spawn } = require("child_process");
 
 let AdmZip = null;
 try {
@@ -51,6 +51,21 @@ const ARCHIVE_EXTENSIONS = [
   ".7z.001",
 ];
 
+function run7zAsync(p7z, archivePath, targetDir) {
+  return new Promise((resolve) => {
+    try {
+      const cp = spawn(p7z, ["x", archivePath, `-o${targetDir}`, "-y", "-aoa", "-p"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      cp.on("error", () => resolve(false));
+      cp.on("close", (code) => resolve(code === 0));
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
 class ArchiveExtractor {
   static get ARCHIVE_EXTENSIONS() {
     return ARCHIVE_EXTENSIONS;
@@ -88,26 +103,27 @@ class ArchiveExtractor {
   }
 
   static async extractZip(archivePath, targetDir) {
+    const p7z = ArchiveExtractor.getSevenZipPath();
+    if (p7z) {
+      await run7zAsync(p7z, archivePath, targetDir);
+      if (ArchiveExtractor.hasExtractedFiles(targetDir)) return true;
+    }
+
     if (AdmZip) {
       try {
-        const zip = new AdmZip(archivePath);
-        zip.extractAllTo(targetDir, true);
+        await new Promise((resolve, reject) => {
+          const zip = new AdmZip(archivePath);
+          zip.extractAllToAsync(targetDir, true, false, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
         if (ArchiveExtractor.hasExtractedFiles(targetDir)) {
           return true;
         }
       } catch (e) {
-        console.warn("AdmZip extraction failed, trying 7zip fallback:", e.message);
+        console.warn("AdmZip extraction failed:", e.message);
       }
-    }
-
-    const p7z = ArchiveExtractor.getSevenZipPath();
-    if (p7z) {
-      try {
-        execSync(`"${p7z}" x "${archivePath}" -o"${targetDir}" -y -aoa -p""`, {
-          stdio: "pipe",
-        });
-        if (ArchiveExtractor.hasExtractedFiles(targetDir)) return true;
-      } catch (e) { }
     }
 
     return ArchiveExtractor.hasExtractedFiles(targetDir);
@@ -116,14 +132,8 @@ class ArchiveExtractor {
   static async extractRar(archivePath, targetDir) {
     const p7z = ArchiveExtractor.getSevenZipPath();
     if (p7z) {
-      try {
-        execSync(`"${p7z}" x "${archivePath}" -o"${targetDir}" -y -aoa -p""`, {
-          stdio: "pipe",
-        });
-        if (ArchiveExtractor.hasExtractedFiles(targetDir)) return true;
-      } catch (e) {
-        console.warn("7zip-bin rar extraction failed, trying node-unrar:", e.message);
-      }
+      await run7zAsync(p7z, archivePath, targetDir);
+      if (ArchiveExtractor.hasExtractedFiles(targetDir)) return true;
     }
 
     if (unrarJs && unrarJs.createExtractorFromFile) {
@@ -160,14 +170,8 @@ class ArchiveExtractor {
   static async extract7z(archivePath, targetDir) {
     const p7z = ArchiveExtractor.getSevenZipPath();
     if (p7z) {
-      try {
-        execSync(`"${p7z}" x "${archivePath}" -o"${targetDir}" -y -aoa -p""`, {
-          stdio: "pipe",
-        });
-        if (ArchiveExtractor.hasExtractedFiles(targetDir)) return true;
-      } catch (e) {
-        console.warn("7zip-bin extraction failed:", e.message);
-      }
+      await run7zAsync(p7z, archivePath, targetDir);
+      if (ArchiveExtractor.hasExtractedFiles(targetDir)) return true;
     }
     return ArchiveExtractor.hasExtractedFiles(targetDir);
   }
@@ -175,12 +179,8 @@ class ArchiveExtractor {
   static async extractTar(archivePath, targetDir) {
     const p7z = ArchiveExtractor.getSevenZipPath();
     if (p7z) {
-      try {
-        execSync(`"${p7z}" x "${archivePath}" -o"${targetDir}" -y -aoa -p""`, {
-          stdio: "pipe",
-        });
-        if (ArchiveExtractor.hasExtractedFiles(targetDir)) return true;
-      } catch (e) { }
+      await run7zAsync(p7z, archivePath, targetDir);
+      if (ArchiveExtractor.hasExtractedFiles(targetDir)) return true;
     }
     return ArchiveExtractor.hasExtractedFiles(targetDir);
   }

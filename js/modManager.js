@@ -574,6 +574,123 @@ class ModManager {
     return true;
   }
 
+  renameMod(xxmiPath, oldName, newName) {
+    if (!xxmiPath || !oldName || !newName) return { success: false, error: "invalid_params" };
+    const trimmedOld = oldName.trim();
+    const safeNewName = newName.replace(/[<>:"/\\|?*]+/g, "").trim();
+    if (!safeNewName) return { success: false, error: "invalid_name" };
+    if (trimmedOld === safeNewName) return { success: true, newName: safeNewName };
+
+    const modsOld = path.join(xxmiPath, "Mods", trimmedOld);
+    const dismodsOld = path.join(xxmiPath, "dismods", trimmedOld);
+    const modvarsOld = path.join(xxmiPath, "modvars", trimmedOld);
+
+    const modsNew = path.join(xxmiPath, "Mods", safeNewName);
+    const dismodsNew = path.join(xxmiPath, "dismods", safeNewName);
+    const modvarsNew = path.join(xxmiPath, "modvars", safeNewName);
+
+    if (trimmedOld.toLowerCase() !== safeNewName.toLowerCase()) {
+      if (fs.existsSync(modsNew) || fs.existsSync(dismodsNew) || fs.existsSync(modvarsNew)) {
+        return { success: false, error: "already_exists" };
+      }
+    }
+
+    try {
+      if (fs.existsSync(modsOld)) {
+        fs.renameSync(modsOld, modsNew);
+      }
+      if (fs.existsSync(dismodsOld)) {
+        fs.renameSync(dismodsOld, dismodsNew);
+      }
+      if (fs.existsSync(modvarsOld)) {
+        fs.renameSync(modvarsOld, modvarsNew);
+      }
+
+      const allMeta = this.getAllModMetadata();
+      const oldKey = trimmedOld.toLowerCase();
+      const newKey = safeNewName.toLowerCase();
+      if (allMeta[oldKey]) {
+        allMeta[newKey] = { ...allMeta[oldKey], name: safeNewName, updatedAt: Date.now() };
+        if (oldKey !== newKey) delete allMeta[oldKey];
+        try {
+          fs.writeFileSync(this.modmetaPath, JSON.stringify(allMeta, null, 4), "utf-8");
+        } catch (e) { }
+      }
+
+      const allLinks = this.getDowlinks();
+      if (allLinks[oldKey]) {
+        allLinks[newKey] = allLinks[oldKey];
+        if (oldKey !== newKey) delete allLinks[oldKey];
+        try {
+          fs.writeFileSync(this.dowlinksPath, JSON.stringify(allLinks, null, 4), "utf-8");
+        } catch (e) { }
+      }
+
+      return { success: true, newName: safeNewName };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  setModPreviewImage(xxmiPath, modName, imagePath) {
+    if (!xxmiPath || !modName || !imagePath || !fs.existsSync(imagePath)) return null;
+    const trimmed = modName.trim();
+    const ext = path.extname(imagePath).toLowerCase() || ".png";
+    const fileName = "preview" + ext;
+
+    const folders = [
+      path.join(xxmiPath, "Mods", trimmed),
+      path.join(xxmiPath, "dismods", trimmed),
+      path.join(xxmiPath, "modvars", trimmed)
+    ];
+
+    let savedPath = null;
+    for (const f of folders) {
+      if (fs.existsSync(f)) {
+        const dest = path.join(f, fileName);
+        try {
+          fs.copyFileSync(imagePath, dest);
+          if (!savedPath) savedPath = dest;
+        } catch (e) { }
+      }
+    }
+
+    if (savedPath) {
+      const url = `file://${savedPath.replace(/\\/g, "/")}`;
+      this.setModMetadata(trimmed, { previewUrl: url }, folders);
+      return url;
+    }
+    return null;
+  }
+
+  setModDescription(xxmiPath, modName, descriptionText) {
+    if (!xxmiPath || !modName) return false;
+    const trimmed = modName.trim();
+    const text = (descriptionText || "").trim();
+
+    const folders = [
+      path.join(xxmiPath, "Mods", trimmed),
+      path.join(xxmiPath, "dismods", trimmed),
+      path.join(xxmiPath, "modvars", trimmed)
+    ];
+
+    for (const f of folders) {
+      if (fs.existsSync(f)) {
+        const dest = path.join(f, "description.txt");
+        try {
+          if (text) {
+            fs.writeFileSync(dest, text, "utf-8");
+          } else if (fs.existsSync(dest)) {
+            fs.unlinkSync(dest);
+          }
+        } catch (e) { }
+      }
+    }
+
+    this.setModMetadata(trimmed, { description: text }, folders);
+    return true;
+  }
+
   detectCharacter(modName, modFolderPaths = [], lang = "ru") {
 
     const saved = this.getModMetadata(modName, modFolderPaths);

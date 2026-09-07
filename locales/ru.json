@@ -352,5 +352,19 @@
   "installed_bulk_disable_filtered": "Выключить видимые моды",
   "installed_all_enabled_toast": "Включено модов: {count}",
   "installed_all_disabled_toast": "Выключено модов: {count}",
-  "installed_bulk_no_mods": "Моды для применения действия не найдены"
+  "installed_bulk_no_mods": "Моды для применения действия не найдены",
+  "dnd_drop_title": "Установка мода",
+  "dnd_drop_subtitle": "Отпустите архив для установки в локальные моды",
+  "dnd_extracting": "Установка мода {name}...",
+  "dnd_install_success": "Мод \"{name}\" успешно установлен!",
+  "dnd_install_error": "Ошибка при установке мода \"{name}\": {error}",
+  "dnd_unsupported_archive": "Поддерживаются только файлы архивов (.zip, .7z, .rar и др.)",
+  "modal_edit_mod": "Редактировать",
+  "modal_edit_name_label": "Название мода",
+  "modal_edit_preview_label": "Превью изображение",
+  "modal_edit_choose_image": "Выбрать файл",
+  "modal_edit_desc_label": "Описание",
+  "modal_edit_saved": "Изменения сохранены!",
+  "modal_edit_name_exists": "Мод с таким названием уже существует",
+  "modal_edit_name_empty": "Название мода не может быть пустым"
 }
