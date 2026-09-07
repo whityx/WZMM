@@ -66,26 +66,88 @@ const AutoUpdater = {
     return 0;
   },
 
-  findAssetForPlatform(assets) {
-    if (!Array.isArray(assets) || assets.length === 0) return null;
+  findAssetsForPlatform(assets) {
+    if (!Array.isArray(assets) || assets.length === 0) return [];
 
     if (this.isWindows) {
+      const variants = [];
+      const setup = assets.find(a => typeof a.name === 'string' && /\.exe$/i.test(a.name) && (/setup|installer|nsis/i.test(a.name) || !/portable/i.test(a.name)));
       const portable = assets.find(a => typeof a.name === 'string' && /portable.*\.exe$/i.test(a.name));
-      if (portable) return portable;
+
+      if (setup) {
+        variants.push({
+          type: 'setup',
+          label: 'Setup (.exe)',
+          titleKey: 'update_modal_format_setup',
+          descKey: 'update_modal_format_setup_desc',
+          asset: setup
+        });
+      }
+      if (portable) {
+        variants.push({
+          type: 'portable',
+          label: 'Portable (.exe)',
+          titleKey: 'update_modal_format_portable',
+          descKey: 'update_modal_format_portable_desc',
+          asset: portable
+        });
+      }
+
+      if (variants.length > 0) return variants;
 
       const anyExe = assets.find(a => typeof a.name === 'string' && /\.exe$/i.test(a.name));
-      if (anyExe) return anyExe;
+      if (anyExe) {
+        const isPort = /portable/i.test(anyExe.name);
+        return [{
+          type: isPort ? 'portable' : 'setup',
+          label: anyExe.name,
+          titleKey: isPort ? 'update_modal_format_portable' : 'update_modal_format_setup',
+          descKey: isPort ? 'update_modal_format_portable_desc' : 'update_modal_format_setup_desc',
+          asset: anyExe
+        }];
+      }
     }
 
     if (this.isLinux) {
       const appImage = assets.find(a => typeof a.name === 'string' && /\.appimage$/i.test(a.name));
-      if (appImage) return appImage;
+      if (appImage) {
+        return [{
+          type: 'appimage',
+          label: 'AppImage',
+          titleKey: '',
+          descKey: '',
+          asset: appImage
+        }];
+      }
 
       const linuxArchive = assets.find(a => typeof a.name === 'string' && /(\.tar\.gz|\.tgz|\.deb)$/i.test(a.name));
-      if (linuxArchive) return linuxArchive;
+      if (linuxArchive) {
+        return [{
+          type: 'archive',
+          label: linuxArchive.name,
+          titleKey: '',
+          descKey: '',
+          asset: linuxArchive
+        }];
+      }
     }
 
-    return assets[0] || null;
+    if (assets[0]) {
+      return [{
+        type: 'default',
+        label: assets[0].name,
+        titleKey: '',
+        descKey: '',
+        asset: assets[0]
+      }];
+    }
+
+    return [];
+  },
+
+  findAssetForPlatform(assets) {
+    const variants = this.findAssetsForPlatform(assets);
+    return (variants[0] && variants[0].asset) || null;
   },
 
   checkForUpdates() {
@@ -122,7 +184,8 @@ const AutoUpdater = {
             const data = JSON.parse(rawData);
             const latestTag = String(data.tag_name || '').replace(/^v/i, '').trim();
             const hasUpdate = this.compareVersions(latestTag, currentVersion) > 0;
-            const matchedAsset = this.findAssetForPlatform(data.assets || []);
+            const variants = this.findAssetsForPlatform(data.assets || []);
+            const matchedAsset = (variants[0] && variants[0].asset) || this.findAssetForPlatform(data.assets || []);
 
             resolve({
               hasUpdate,
@@ -132,6 +195,8 @@ const AutoUpdater = {
               releaseNotes: data.body || '',
               releaseUrl: data.html_url || 'https://github.com/whityx/WZMM/releases',
               asset: matchedAsset,
+              variants,
+              assets: data.assets || [],
               platform: this.isWindows ? 'windows' : (this.isLinux ? 'linux' : 'other')
             });
           } catch (err) {
@@ -475,16 +540,61 @@ const AutoUpdater = {
     }
 
     const tFunc = typeof t === 'function' ? t : (k) => k;
-    const platformLabel = this.isWindows
+    const isWinPlatform = updateInfo.platform === 'windows' || this.isWindows;
+    const isLinuxPlatform = updateInfo.platform === 'linux' || this.isLinux;
+    const platformLabel = isWinPlatform
       ? 'Windows (.exe)'
-      : (this.isLinux ? 'Linux (.AppImage)' : 'Unknown OS');
+      : (isLinuxPlatform ? 'Linux (.AppImage)' : 'Unknown OS');
 
-    const existingFile = this.checkDownloadedFile(updateInfo.asset);
+    let variants = Array.isArray(updateInfo.variants) && updateInfo.variants.length > 0
+      ? updateInfo.variants
+      : this.findAssetsForPlatform(updateInfo.assets || (updateInfo.asset ? [updateInfo.asset] : []));
+
+    if (!variants.length && updateInfo.asset) {
+      variants = [{
+        type: 'default',
+        label: updateInfo.asset.name,
+        titleKey: '',
+        descKey: '',
+        asset: updateInfo.asset
+      }];
+    }
+
+    let selectedIndex = 0;
+    let selectedVariant = variants[selectedIndex] || null;
+    let selectedAsset = (selectedVariant && selectedVariant.asset) || updateInfo.asset || null;
+
+    const existingFile = this.checkDownloadedFile(selectedAsset);
     let downloadedFilePath = existingFile || null;
 
     const rawNotes = updateInfo.releaseNotes || '';
     const formattedNotes = this.renderMarkdown(rawNotes);
     const subtitleText = existingFile ? tFunc('update_modal_already_downloaded') : tFunc('update_modal_available');
+
+    const variantsHtml = variants.length > 1 ? `
+      <div class="wzmm-update-variants-wrap">
+        <div class="wzmm-update-variants-title">${tFunc('update_modal_choose_format')}</div>
+        <div class="wzmm-update-variants-grid" id="wzmm-update-variants-grid">
+          ${variants.map((v, i) => {
+            const vTitle = v.titleKey ? tFunc(v.titleKey) : (v.label || v.type);
+            const vDesc = v.descKey ? tFunc(v.descKey) : '';
+            const vSize = v.asset && v.asset.size ? this.formatBytes(v.asset.size) : '';
+            return `
+              <div class="wzmm-update-variant-card ${i === selectedIndex ? 'active' : ''}" data-idx="${i}">
+                <div class="wzmm-update-variant-radio"></div>
+                <div class="wzmm-update-variant-body">
+                  <div class="wzmm-update-variant-title">
+                    <span>${this.escapeHtml(vTitle)}</span>
+                    ${vSize ? `<span class="wzmm-update-variant-size">${this.escapeHtml(vSize)}</span>` : ''}
+                  </div>
+                  ${vDesc ? `<div class="wzmm-update-variant-sub">${this.escapeHtml(vDesc)}</div>` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    ` : '';
 
     overlay.innerHTML = `
       <div class="wzmm-update-card">
@@ -498,7 +608,7 @@ const AutoUpdater = {
           </div>
           <div class="wzmm-update-title-wrap">
             <h3 class="wzmm-update-title">${tFunc('update_modal_title')}</h3>
-            <div class="wzmm-update-subtitle">${subtitleText}</div>
+            <div id="wzmm-update-subtitle" class="wzmm-update-subtitle">${subtitleText}</div>
           </div>
         </div>
 
@@ -516,6 +626,8 @@ const AutoUpdater = {
             ${platformLabel}
           </div>
         </div>
+
+        ${variantsHtml}
 
         ${rawNotes ? `
           <div class="wzmm-update-notes-title">${tFunc('update_modal_notes')}</div>
@@ -579,6 +691,7 @@ const AutoUpdater = {
       }
     };
 
+    const subtitleEl = overlay.querySelector('#wzmm-update-subtitle');
     const btnLater = overlay.querySelector('#wzmm-btn-update-later');
     const btnRelease = overlay.querySelector('#wzmm-btn-update-release');
     const btnDownload = overlay.querySelector('#wzmm-btn-update-download');
@@ -595,6 +708,44 @@ const AutoUpdater = {
     const statusText = overlay.querySelector('#wzmm-update-status-text');
     const bytesText = overlay.querySelector('#wzmm-update-bytes-text');
     const speedText = overlay.querySelector('#wzmm-update-speed-text');
+
+    const updateVariantState = () => {
+      selectedVariant = variants[selectedIndex] || null;
+      selectedAsset = (selectedVariant && selectedVariant.asset) || updateInfo.asset || null;
+      const file = this.checkDownloadedFile(selectedAsset);
+      downloadedFilePath = file || null;
+
+      if (subtitleEl) {
+        subtitleEl.textContent = file ? tFunc('update_modal_already_downloaded') : tFunc('update_modal_available');
+      }
+
+      if (file) {
+        if (pathVal) {
+          pathVal.textContent = path.dirname(file);
+          pathVal.title = file;
+          pathVal.style.cursor = 'pointer';
+        }
+        progressArea.style.display = 'none';
+        actionsArea.style.display = 'none';
+        completedWrap.style.display = 'flex';
+      } else {
+        completedWrap.style.display = 'none';
+        progressArea.style.display = 'none';
+        actionsArea.style.display = 'flex';
+      }
+    };
+
+    const variantCards = overlay.querySelectorAll('.wzmm-update-variant-card');
+    variantCards.forEach((card) => {
+      card.addEventListener('click', () => {
+        const idx = parseInt(card.getAttribute('data-idx'), 10);
+        if (isNaN(idx) || idx === selectedIndex) return;
+        variantCards.forEach((c) => c.classList.remove('active'));
+        card.classList.add('active');
+        selectedIndex = idx;
+        updateVariantState();
+      });
+    });
 
     if (existingFile && pathVal) {
       pathVal.title = existingFile;
@@ -652,7 +803,7 @@ const AutoUpdater = {
 
     if (btnDownload) {
       btnDownload.addEventListener('click', () => {
-        if (!updateInfo.asset) {
+        if (!selectedAsset) {
           this.openReleasePage(updateInfo.releaseUrl);
           if (!isBlocking) closeModal();
           return;
@@ -661,7 +812,7 @@ const AutoUpdater = {
         actionsArea.style.display = 'none';
         progressArea.style.display = 'flex';
 
-        this.downloadUpdate(updateInfo.asset, (prog) => {
+        this.downloadUpdate(selectedAsset, (prog) => {
           if (progressFill) progressFill.style.width = `${prog.percent}%`;
           if (percentText) percentText.textContent = `${prog.percent}%`;
           if (bytesText) {
@@ -699,6 +850,46 @@ const AutoUpdater = {
         }
       });
     }
+  },
+
+  showDemoUpdateModal(options = {}, onDismiss = null) {
+    const currentVersion = this.getCurrentVersion();
+    const demoInfo = {
+      hasUpdate: true,
+      currentVersion,
+      latestVersion: '0.3.2',
+      releaseName: 'v0.3.2 - Update',
+      releaseNotes: '### What\'s New in v0.3.2\n- Added installer and portable download options for Windows\n- UI improvements & bug fixes\n- Performance enhancements',
+      releaseUrl: 'https://github.com/whityx/WZMM/releases',
+      platform: 'windows',
+      variants: [
+        {
+          type: 'setup',
+          label: 'Setup (.exe)',
+          titleKey: 'update_modal_format_setup',
+          descKey: 'update_modal_format_setup_desc',
+          asset: {
+            name: 'WZMM-0.3.2-Setup.exe',
+            size: 104857600,
+            browser_download_url: 'https://github.com/whityx/WZMM/releases/download/v0.3.2/WZMM-0.3.2-Setup.exe'
+          }
+        },
+        {
+          type: 'portable',
+          label: 'Portable (.exe)',
+          titleKey: 'update_modal_format_portable',
+          descKey: 'update_modal_format_portable_desc',
+          asset: {
+            name: 'WZMM-0.3.2-Portable.exe',
+            size: 105140348,
+            browser_download_url: 'https://github.com/whityx/WZMM/releases/download/v0.3.2/WZMM-0.3.2-Portable.exe'
+          }
+        }
+      ],
+      ...options
+    };
+    demoInfo.asset = demoInfo.variants[0].asset;
+    this.showUpdateModal(demoInfo, onDismiss, false);
   }
 };
 

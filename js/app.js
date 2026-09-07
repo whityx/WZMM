@@ -6553,6 +6553,16 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  const hasDemoUpdateArg = (process.argv || []).some((arg) => typeof arg === "string" && (arg === "--demo-update" || arg === "--show-update-modal"));
+  if (hasDemoUpdateArg && typeof AutoUpdater !== "undefined") {
+    if (typeof SplashManager !== "undefined") SplashManager.hide();
+    startAppInit();
+    setTimeout(() => {
+      AutoUpdater.showDemoUpdateModal();
+    }, 250);
+    return;
+  }
+
   if (!currentSettings.skipSplashScreen && typeof AutoUpdater !== "undefined") {
     SplashManager.setProgress(20, t("splash_status_check_updates"));
     AutoUpdater.checkForUpdates()

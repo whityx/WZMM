@@ -1488,6 +1488,113 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.wzmm-update-variants-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wzmm-update-variants-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.wzmm-update-variants-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.wzmm-update-variant-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  user-select: none;
+}
+
+.wzmm-update-variant-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.wzmm-update-variant-card.active {
+  background: var(--accent-dim, rgba(147, 51, 234, 0.15));
+  border-color: var(--accent);
+}
+
+.wzmm-update-variant-radio {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease;
+}
+
+.wzmm-update-variant-card.active .wzmm-update-variant-radio {
+  border-color: var(--accent);
+}
+
+.wzmm-update-variant-radio::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.wzmm-update-variant-card.active .wzmm-update-variant-radio::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.wzmm-update-variant-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.wzmm-update-variant-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+}
+
+.wzmm-update-variant-size {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--text-muted, #94a3b8);
+}
+
+.wzmm-update-variant-sub {
+  font-size: 0.74rem;
+  color: var(--text-secondary, #a1a1aa);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .wzmm-update-notes-title {
   font-size: 0.8rem;
   font-weight: 600;
