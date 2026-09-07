@@ -33,11 +33,11 @@ jobs:
 
       - name: Build Linux packages
         if: runner.os == 'Linux'
-        run: npm run build:linux -- -c.publish=never
+        run: npm run build:linux -- --publish never
 
       - name: Build Windows packages
         if: runner.os == 'Windows'
-        run: npm run build:win -- -c.publish=never
+        run: npm run build:win -- --publish never
 
       - name: Upload artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
