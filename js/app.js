@@ -5767,8 +5767,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const versionEl = document.getElementById("setting-launcher-version");
     if (versionEl) {
-      const v = typeof AutoUpdater !== "undefined" ? AutoUpdater.getCurrentVersion() : "0.3.0";
-      const cleanV = String(v || "0.3.0").replace(/^v/i, "").trim();
+      const v = typeof AutoUpdater !== "undefined" ? AutoUpdater.getCurrentVersion() : "0.3.1";
+      const cleanV = String(v || "0.3.1").replace(/^v/i, "").trim();
       versionEl.textContent = `v${cleanV}`;
     }
 
