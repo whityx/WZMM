@@ -45,7 +45,7 @@
         "AppImage"
       ],
       "category": "Utility",
-      "executableName": "WZMM-${version}",
+      "executableName": "WZMM",
       "artifactName": "WZMM-${version}.${ext}"
     },
     "win": {
