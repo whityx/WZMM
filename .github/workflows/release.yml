@@ -33,15 +33,11 @@ jobs:
 
       - name: Build Linux packages
         if: runner.os == 'Linux'
-        run: npm run build:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:linux -- -c.publish=never
 
       - name: Build Windows packages
         if: runner.os == 'Windows'
-        run: npm run build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:win -- -c.publish=never
 
       - name: Upload artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -51,10 +47,8 @@ jobs:
             dist/*.AppImage
             dist/*.exe
             dist/*.zip
-            dist/*.blockmap
-            dist/latest*.yml
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
