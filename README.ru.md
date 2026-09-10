@@ -78,3 +78,8 @@ npm install
 ```bash
 npm run dist:linux
 ```
+
+## Участие в разработке
+
+Проект открыт для предложений, сообщений об ошибках и улучшений! Вы можете создать [Issue](https://github.com/whityx/WZMM/issues) или отправить [Pull Request](https://github.com/whityx/WZMM/pulls).
+
