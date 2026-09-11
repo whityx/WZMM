@@ -226,10 +226,7 @@ body {
 }
 
 .sidebar-divider {
-  width: 1px;
-  height: 20px;
-  background: var(--border-subtle);
-  margin: 0 12px;
+  display: none;
 }
 
 .sidebar-top,
@@ -237,6 +234,7 @@ body {
   display: flex;
   flex-direction: row;
   align-items: center;
+  gap: 4px;
 }
 
 .sidebar-menu {
@@ -287,6 +285,16 @@ body {
 }
 
 .btn-launch:hover {
+  background: var(--btn-launch-hover-bg, #fff);
+  opacity: 0.95;
+}
+
+.btn-launch.running {
+  background: var(--btn-launch-bg, var(--text-primary));
+  color: var(--btn-launch-text, var(--bg-main));
+}
+
+.btn-launch.running:hover {
   background: var(--btn-launch-hover-bg, #fff);
   opacity: 0.95;
 }

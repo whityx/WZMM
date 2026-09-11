@@ -15,19 +15,21 @@
 
             <div class="dl-stats-group">
                 <div class="dl-stat-badge dl-stat-speed" id="dl-stat-speed">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                    <div class="dl-stat-info">
-                        <span class="dl-stat-val" id="dl-speed-val">0 МБ/с</span>
-                        <span class="dl-stat-lbl" data-i18n-text="dl_stat_speed">Скорость</span>
-                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    <span class="dl-stat-val" id="dl-speed-val">0 МБ/с</span>
+                    <span class="dl-stat-lbl" data-i18n-text="dl_stat_speed">Скорость</span>
                 </div>
 
                 <div class="dl-stat-badge dl-stat-active" id="dl-stat-active">
-                    <span class="dl-pulse-dot"></span>
-                    <div class="dl-stat-info">
-                        <span class="dl-stat-val" id="dl-active-val">0</span>
-                        <span class="dl-stat-lbl" data-i18n-text="dl_stat_active">В процессе</span>
-                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span class="dl-stat-val" id="dl-active-val">0</span>
+                    <span class="dl-stat-lbl" data-i18n-text="dl_stat_active">В процессе</span>
                 </div>
             </div>
         </div>

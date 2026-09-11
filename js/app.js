@@ -48,6 +48,22 @@ const loadTranslations = (lang) => {
   } catch (e) {
     console.error("Ошибка загрузки локализации", e);
   }
+
+  try {
+    const { ipcRenderer } = require("electron");
+    ipcRenderer.send("update-tray-labels", {
+      launchGame: translations["tray_launch_game"] || (lang === "ru" ? "Запустить игру" : "Launch Game"),
+      closeGame: translations["tray_close_game"] || (lang === "ru" ? "Закрыть игру" : "Close Game"),
+      installed: translations["tray_installed"] || (lang === "ru" ? "Установленные" : "Installed"),
+      getMods: translations["tray_download"] || (lang === "ru" ? "Каталог модов" : "Get Mods"),
+      downloads: translations["tray_downloads"] || (lang === "ru" ? "Загрузки" : "Downloads"),
+      settings: translations["tray_settings"] || (lang === "ru" ? "Настройки" : "Settings"),
+      minimize: translations["tray_minimize"] || (lang === "ru" ? "Свернуть" : "Minimize"),
+      restore: translations["tray_restore"] || (lang === "ru" ? "Развернуть" : "Restore"),
+      exit: translations["tray_exit"] || (lang === "ru" ? "Выход" : "Exit"),
+      tooltip: translations["tray_tooltip"] || (lang === "ru" ? "WZMM - Менеджер модов Zenless Zone Zero" : "WZMM - Zenless Zone Zero Mod Manager")
+    });
+  } catch (e) {}
 };
 
 const t = (key, params = {}) => {
@@ -122,6 +138,9 @@ const bindExternalLinks = (container) => {
 
 const applyTranslationsToDOM = (container) => {
   container.querySelectorAll("[data-i18n-text]").forEach(el => {
+    if (el.id === "btn-launch-game" && typeof window.updateLaunchButtonState === "function") {
+      return;
+    }
     const key = el.getAttribute("data-i18n-text");
     if (translations[key]) el.textContent = translations[key];
   });
@@ -136,6 +155,9 @@ const applyTranslationsToDOM = (container) => {
       el.removeAttribute("title");
     }
   });
+  if (typeof window.updateLaunchButtonState === "function") {
+    window.updateLaunchButtonState();
+  }
 };
 
 const getThemesDir = () => {
@@ -5765,10 +5787,34 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
+    const minimizeTrayCheckbox = document.getElementById("setting-minimize-tray");
+    if (minimizeTrayCheckbox) {
+      minimizeTrayCheckbox.checked = !!currentSettings.minimizeTray;
+      minimizeTrayCheckbox.addEventListener("change", () => {
+        saveSettings();
+      });
+    }
+
+    const restoreOnExitCheckbox = document.getElementById("setting-restore-on-exit");
+    if (restoreOnExitCheckbox) {
+      restoreOnExitCheckbox.checked = !!currentSettings.restoreOnExit;
+      restoreOnExitCheckbox.addEventListener("change", () => {
+        saveSettings();
+      });
+    }
+
+    const closeToTrayCheckbox = document.getElementById("setting-close-to-tray");
+    if (closeToTrayCheckbox) {
+      closeToTrayCheckbox.checked = !!currentSettings.closeToTray;
+      closeToTrayCheckbox.addEventListener("change", () => {
+        saveSettings();
+      });
+    }
+
     const versionEl = document.getElementById("setting-launcher-version");
     if (versionEl) {
-      const v = typeof AutoUpdater !== "undefined" ? AutoUpdater.getCurrentVersion() : "0.3.1";
-      const cleanV = String(v || "0.3.1").replace(/^v/i, "").trim();
+      const v = typeof AutoUpdater !== "undefined" ? AutoUpdater.getCurrentVersion() : "0.3.2";
+      const cleanV = String(v || "0.3.2").replace(/^v/i, "").trim();
       versionEl.textContent = `v${cleanV}`;
     }
 
@@ -5812,6 +5858,9 @@ document.addEventListener("DOMContentLoaded", () => {
         language: langSelect ? langSelect.value : (currentSettings.language || "en"),
         theme: themeSelect ? mapLegacyTheme(themeSelect.value) : (currentSettings.theme || "purple"),
         skipSplashScreen: skipSplashCheckbox ? skipSplashCheckbox.checked : !!currentSettings.skipSplashScreen,
+        minimizeTray: minimizeTrayCheckbox ? minimizeTrayCheckbox.checked : !!currentSettings.minimizeTray,
+        restoreOnExit: restoreOnExitCheckbox ? restoreOnExitCheckbox.checked : !!currentSettings.restoreOnExit,
+        closeToTray: closeToTrayCheckbox ? closeToTrayCheckbox.checked : !!currentSettings.closeToTray,
         usefulMods: currentSettings.usefulMods || [],
         favoriteAuthors: currentSettings.favoriteAuthors || [],
       };
@@ -6291,9 +6340,76 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  document.getElementById("btn-launch-game").addEventListener("click", () => {
-    startOpt.launch(currentSettings, t);
-  });
+  const updateLaunchButtonState = () => {
+    const btn = document.getElementById("btn-launch-game");
+    if (!btn) return;
+    startOpt.checkGameRunningAsync((isRunning) => {
+      if (isRunning) {
+        btn.classList.add("running");
+        btn.textContent = t("nav_close_game") || "Закрыть игру";
+      } else {
+        btn.classList.remove("running");
+        btn.textContent = t("nav_launch_game") || "Запустить игру";
+      }
+      try {
+        const { ipcRenderer } = require("electron");
+        ipcRenderer.send("update-game-running-state", isRunning);
+      } catch (e) {}
+    });
+  };
+  window.updateLaunchButtonState = updateLaunchButtonState;
+
+  const handleLaunchOrCloseGame = async () => {
+    if (startOpt.isGameRunning()) {
+      let confirmed = false;
+      if (window.Modal && typeof window.Modal.confirm === "function") {
+        confirmed = await window.Modal.confirm({
+          title: t("confirm_close_game_title") || "Закрытие игры",
+          message: t("confirm_close_game_msg") || "Вы действительно хотите принудительно закрыть Zenless Zone Zero?",
+          confirmText: t("btn_close_game") || "Закрыть игру",
+          cancelText: t("confirm_cancel") || "Отмена",
+          type: "danger"
+        });
+      } else {
+        confirmed = confirm(t("confirm_close_game_msg") || "Вы действительно хотите принудительно закрыть Zenless Zone Zero?");
+      }
+
+      if (confirmed) {
+        startOpt.killGame(() => {
+          updateLaunchButtonState();
+        });
+      }
+    } else {
+      startOpt.launch(currentSettings, t);
+      setTimeout(updateLaunchButtonState, 2000);
+    }
+  };
+
+  const btnLaunchGame = document.getElementById("btn-launch-game");
+  if (btnLaunchGame) {
+    btnLaunchGame.addEventListener("click", handleLaunchOrCloseGame);
+  }
+
+  setInterval(updateLaunchButtonState, 2000);
+  updateLaunchButtonState();
+
+  try {
+    const { ipcRenderer } = require("electron");
+    ipcRenderer.on("tray-launch-game", () => {
+      handleLaunchOrCloseGame();
+    });
+    ipcRenderer.on("tray-navigate-page", (event, pageName) => {
+      const targetItem = Array.from(menuItems).find(
+        (i) => i.getAttribute("data-page") === pageName
+      );
+      if (targetItem) {
+        menuItems.forEach((i) => i.classList.remove("active"));
+        targetItem.classList.add("active");
+        moveIndicator(targetItem);
+        loadPage(pageName);
+      }
+    });
+  } catch (e) {}
 
   const initDragAndDrop = () => {
     let dragCounter = 0;

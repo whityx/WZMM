@@ -115,16 +115,239 @@ if (!gotTheLock) {
             }
         });
 
+        mainWindow.on('show', () => updateTrayMenu());
+        mainWindow.on('hide', () => updateTrayMenu());
+
+        function shouldCloseToTray() {
+            try {
+                const sPath = path.join(getConfigDir(), 'settings.json');
+                if (fs.existsSync(sPath)) {
+                    const parsed = JSON.parse(fs.readFileSync(sPath, 'utf8'));
+                    if (typeof parsed.closeToTray === 'boolean') {
+                        return parsed.closeToTray;
+                    }
+                }
+            } catch (e) {}
+            return false;
+        }
+
         mainWindow.on('close', (event) => {
-            if (!isQuiting && tray) {
+            if (!isQuiting && shouldCloseToTray()) {
+                if (!tray) {
+                    initTray();
+                }
                 event.preventDefault();
                 mainWindow.hide();
             }
         });
     }
 
+    let isGameRunning = false;
+    let trayLabels = {
+        launchGame: 'Launch Game',
+        closeGame: 'Close Game',
+        installed: 'Installed',
+        getMods: 'Get Mods',
+        downloads: 'Downloads',
+        settings: 'Settings',
+        minimize: 'Minimize',
+        restore: 'Restore',
+        exit: 'Exit',
+        tooltip: 'WZMM - Zenless Zone Zero Mod Manager'
+    };
+
+    function loadInitialTrayLabels() {
+        try {
+            const cfgDir = getConfigDir();
+            const sPath = path.join(cfgDir, 'settings.json');
+            let lang = 'en';
+            if (fs.existsSync(sPath)) {
+                const parsed = JSON.parse(fs.readFileSync(sPath, 'utf8'));
+                if (parsed && parsed.language) lang = parsed.language;
+            }
+            let locPath = path.join(__dirname, 'locales', `${lang}.json`);
+            if (!fs.existsSync(locPath)) {
+                locPath = path.join(process.cwd(), 'locales', `${lang}.json`);
+            }
+            if (fs.existsSync(locPath)) {
+                const loc = JSON.parse(fs.readFileSync(locPath, 'utf8'));
+                trayLabels = {
+                    launchGame: loc.tray_launch_game || 'Launch Game',
+                    closeGame: loc.tray_close_game || 'Close Game',
+                    installed: loc.tray_installed || 'Installed',
+                    getMods: loc.tray_download || 'Get Mods',
+                    downloads: loc.tray_downloads || 'Downloads',
+                    settings: loc.tray_settings || 'Settings',
+                    minimize: loc.tray_minimize || 'Minimize',
+                    restore: loc.tray_restore || 'Restore',
+                    exit: loc.tray_exit || 'Exit',
+                    tooltip: loc.tray_tooltip || 'WZMM - Zenless Zone Zero Mod Manager'
+                };
+            }
+        } catch (e) {}
+    }
+
+    function getTrayIcon() {
+        const candidates = [
+            path.join(__dirname, 'icons', 'tray-icon.png'),
+            path.join(__dirname, 'build', 'icons', '32x32.png'),
+            path.join(__dirname, 'build', 'icons', '64x64.png'),
+            path.join(__dirname, 'build', 'icon.ico'),
+            path.join(__dirname, 'icons', 'why-zenless-mod-manager.png'),
+            path.join(__dirname, 'build', 'icons', '512x512.png')
+        ];
+
+        for (const p of candidates) {
+            if (fs.existsSync(p)) {
+                const img = nativeImage.createFromPath(p);
+                if (!img.isEmpty()) {
+                    return img.resize({ width: isLinux ? 22 : 24, height: isLinux ? 22 : 24 });
+                }
+            }
+        }
+        return nativeImage.createEmpty();
+    }
+
+    function updateTrayMenu(customLabels = {}) {
+        if (customLabels && typeof customLabels === 'object') {
+            trayLabels = { ...trayLabels, ...customLabels };
+        }
+        if (!tray) return;
+
+        if (trayLabels.tooltip) {
+            tray.setToolTip(trayLabels.tooltip);
+        }
+
+        const isVisible = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
+        const launchOrCloseLabel = isGameRunning
+            ? (trayLabels.closeGame || 'Close Game')
+            : (trayLabels.launchGame || 'Launch Game');
+
+        const contextMenu = Menu.buildFromTemplate([
+            {
+                label: launchOrCloseLabel,
+                click: () => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        if (!mainWindow.isVisible()) {
+                            if (mainWindow.isMinimized()) mainWindow.restore();
+                            mainWindow.show();
+                            mainWindow.focus();
+                        }
+                        mainWindow.webContents.send('tray-launch-game');
+                    }
+                }
+            },
+            { type: 'separator' },
+            {
+                label: trayLabels.installed || 'Installed',
+                click: () => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        if (mainWindow.isMinimized()) mainWindow.restore();
+                        mainWindow.show();
+                        mainWindow.focus();
+                        mainWindow.webContents.send('tray-navigate-page', 'installed');
+                    }
+                }
+            },
+            {
+                label: trayLabels.getMods || 'Get Mods',
+                click: () => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        if (mainWindow.isMinimized()) mainWindow.restore();
+                        mainWindow.show();
+                        mainWindow.focus();
+                        mainWindow.webContents.send('tray-navigate-page', 'download');
+                    }
+                }
+            },
+            {
+                label: trayLabels.downloads || 'Downloads',
+                click: () => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        if (mainWindow.isMinimized()) mainWindow.restore();
+                        mainWindow.show();
+                        mainWindow.focus();
+                        mainWindow.webContents.send('tray-navigate-page', 'downloads');
+                    }
+                }
+            },
+            {
+                label: trayLabels.settings || 'Settings',
+                click: () => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        if (mainWindow.isMinimized()) mainWindow.restore();
+                        mainWindow.show();
+                        mainWindow.focus();
+                        mainWindow.webContents.send('tray-navigate-page', 'settings');
+                    }
+                }
+            },
+            { type: 'separator' },
+            {
+                label: isVisible ? (trayLabels.minimize || 'Minimize') : (trayLabels.restore || 'Restore'),
+                click: () => {
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                        if (mainWindow.isVisible()) {
+                            mainWindow.hide();
+                        } else {
+                            if (mainWindow.isMinimized()) mainWindow.restore();
+                            mainWindow.show();
+                            mainWindow.focus();
+                        }
+                        updateTrayMenu();
+                    }
+                }
+            },
+            {
+                label: trayLabels.exit || 'Exit',
+                click: () => {
+                    isQuiting = true;
+                    app.quit();
+                }
+            }
+        ]);
+
+        tray.setContextMenu(contextMenu);
+    }
+
+    function initTray() {
+        if (tray) return;
+
+        loadInitialTrayLabels();
+        const icon = getTrayIcon();
+        tray = new Tray(icon);
+        tray.setToolTip(trayLabels.tooltip || 'WZMM - Zenless Zone Zero Mod Manager');
+
+        updateTrayMenu();
+
+        tray.on('click', () => {
+            if (mainWindow) {
+                if (mainWindow.isVisible()) {
+                    if (mainWindow.isFocused()) {
+                        mainWindow.hide();
+                    } else {
+                        mainWindow.focus();
+                    }
+                } else {
+                    if (mainWindow.isMinimized()) mainWindow.restore();
+                    mainWindow.show();
+                    mainWindow.focus();
+                }
+            }
+        });
+
+        tray.on('double-click', () => {
+            if (mainWindow) {
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
+            }
+        });
+    }
+
     app.whenReady().then(() => {
         createWindow();
+        initTray();
 
         app.on('activate', () => {
             if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -140,36 +363,24 @@ if (!gotTheLock) {
     });
 
     ipcMain.on('minimize-to-tray', () => {
+        if (!tray) {
+            initTray();
+        }
         if (mainWindow) {
             mainWindow.hide();
         }
+    });
 
-        if (!tray) {
-            let iconPath = path.join(__dirname, 'build', 'icons', '512x512.png');
-            let icon;
-            
-            if (fs.existsSync(iconPath)) {
-                icon = nativeImage.createFromPath(iconPath);
-            } else {
-                icon = nativeImage.createEmpty();
-            }
-
-            tray = new Tray(icon);
-            tray.setToolTip('WZMM - Мод Менеджер');
-
-            const contextMenu = Menu.buildFromTemplate([
-                { label: 'Развернуть', click: () => { if (mainWindow) mainWindow.show(); } },
-                { label: 'Выход', click: () => { 
-                    isQuiting = true; 
-                    app.quit(); 
-                }}
-            ]);
-
-            tray.setContextMenu(contextMenu);
-            tray.on('click', () => {
-                if (mainWindow) mainWindow.show();
-            });
+    ipcMain.on('restore-from-tray', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
         }
+    });
+
+    ipcMain.on('update-tray-labels', (event, labels) => {
+        updateTrayMenu(labels);
     });
 
     ipcMain.handle('open-3d-viewer', async (event, data) => {

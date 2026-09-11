@@ -2,7 +2,7 @@ const { ipcRenderer } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { spawn, execSync } = require("child_process");
+const { spawn, execSync, exec } = require("child_process");
 const { isWindows, isLinux, checkGameProcessCommand } = require("./platform");
 
 function notify(title, message, type = "info") {
@@ -14,6 +14,57 @@ function notify(title, message, type = "info") {
 }
 
 function getSteamPaths() {
+  if (isWindows) {
+    const regQueries = [
+      'reg query "HKCU\\Software\\Valve\\Steam" /v SteamPath',
+      'reg query "HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam" /v InstallPath',
+      'reg query "HKLM\\SOFTWARE\\Valve\\Steam" /v InstallPath',
+      'reg query "HKCU\\Software\\Valve\\Steam" /v SteamExe'
+    ];
+
+    for (const query of regQueries) {
+      try {
+        const stdout = execSync(query, { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
+        const lines = stdout.split(/\r?\n/);
+        for (const line of lines) {
+          const match = line.match(/REG_SZ\s+(.+)$/i);
+          if (match && match[1]) {
+            let p = match[1].trim();
+            if (p.toLowerCase().endsWith('.exe')) {
+              p = path.dirname(p);
+            }
+            p = path.normalize(p);
+            if (fs.existsSync(p) && fs.statSync(p).isDirectory()) {
+              return p;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    const standardDirs = [];
+    if (process.env['ProgramFiles(x86)']) {
+      standardDirs.push(path.join(process.env['ProgramFiles(x86)'], 'Steam'));
+    }
+    if (process.env.ProgramFiles) {
+      standardDirs.push(path.join(process.env.ProgramFiles, 'Steam'));
+    }
+    const drives = ['C', 'D', 'E', 'F', 'G', 'H'];
+    for (const drive of drives) {
+      standardDirs.push(`${drive}:\\Steam`);
+      standardDirs.push(`${drive}:\\Program Files (x86)\\Steam`);
+      standardDirs.push(`${drive}:\\Program Files\\Steam`);
+      standardDirs.push(`${drive}:\\SteamLibrary`);
+    }
+
+    for (const dir of standardDirs) {
+      if (fs.existsSync(dir)) {
+        return dir;
+      }
+    }
+    return null;
+  }
+
   const home = os.homedir();
   const roots = [
     path.join(home, ".local", "share", "Steam"),
@@ -31,35 +82,65 @@ function findSteamAndGame() {
   const libVdf = path.join(steamDir, "steamapps", "libraryfolders.vdf");
 
   if (fs.existsSync(libVdf)) {
-    const vdf = fs.readFileSync(libVdf, "utf-8");
-    const lines = vdf.split("\n");
-    for (const line of lines) {
-      if (line.includes('"path"')) {
-        const parts = line.split('"');
-        if (parts.length >= 4) {
-          const p = parts[3];
-          if (fs.existsSync(p) && p !== steamDir) {
-            libs.push(p);
+    try {
+      const vdf = fs.readFileSync(libVdf, "utf-8");
+      const lines = vdf.split(/\r?\n/);
+      for (const line of lines) {
+        if (line.includes('"path"')) {
+          const parts = line.split('"');
+          if (parts.length >= 4) {
+            let p = parts[3];
+            p = p.replace(/\\\\/g, "\\");
+            p = path.normalize(p);
+            if (fs.existsSync(p) && !libs.includes(p)) {
+              libs.push(p);
+            }
           }
         }
       }
+    } catch (e) {}
+  }
+
+  const possibleRelPaths = [
+    path.join("steamapps", "common", "Zenless Zone Zero", "games", "ZenlessZoneZero Game", "ZenlessZoneZero.exe"),
+    path.join("steamapps", "common", "Zenless Zone Zero", "ZenlessZoneZero Game", "ZenlessZoneZero.exe"),
+    path.join("steamapps", "common", "Zenless Zone Zero", "ZenlessZoneZero.exe"),
+    path.join("steamapps", "common", "ZenlessZoneZero", "games", "ZenlessZoneZero Game", "ZenlessZoneZero.exe"),
+    path.join("steamapps", "common", "ZenlessZoneZero", "ZenlessZoneZero Game", "ZenlessZoneZero.exe"),
+    path.join("steamapps", "common", "ZenlessZoneZero", "ZenlessZoneZero.exe"),
+  ];
+
+  for (const lib of libs) {
+    for (const rel of possibleRelPaths) {
+      const exePath = path.join(lib, rel);
+      if (fs.existsSync(exePath)) {
+        return { steamDir, gameLib: lib, gameExe: exePath, libs };
+      }
+    }
+
+    const commonDir = path.join(lib, "steamapps", "common");
+    if (fs.existsSync(commonDir)) {
+      try {
+        const entries = fs.readdirSync(commonDir);
+        for (const entry of entries) {
+          if (/zenless/i.test(entry)) {
+            const folder = path.join(commonDir, entry);
+            const candidates = [
+              path.join(folder, "ZenlessZoneZero.exe"),
+              path.join(folder, "ZenlessZoneZero Game", "ZenlessZoneZero.exe"),
+              path.join(folder, "games", "ZenlessZoneZero Game", "ZenlessZoneZero.exe")
+            ];
+            for (const cand of candidates) {
+              if (fs.existsSync(cand)) {
+                return { steamDir, gameLib: lib, gameExe: cand, libs };
+              }
+            }
+          }
+        }
+      } catch (e) {}
     }
   }
 
-  const gameRelPath = path.join(
-    "steamapps",
-    "common",
-    "Zenless Zone Zero",
-    "games",
-    "ZenlessZoneZero Game",
-    "ZenlessZoneZero.exe"
-  );
-  for (const lib of libs) {
-    const exePath = path.join(lib, gameRelPath);
-    if (fs.existsSync(exePath)) {
-      return { steamDir, gameLib: lib, gameExe: exePath, libs };
-    }
-  }
   return { steamDir, gameLib: null, gameExe: null, libs };
 }
 
@@ -87,31 +168,232 @@ function findProton(libs) {
   return null;
 }
 
+function findXxmiExe(binPath) {
+  if (!binPath || !fs.existsSync(binPath)) return null;
+
+  try {
+    const stat = fs.statSync(binPath);
+    if (stat.isFile() && binPath.toLowerCase().endsWith(".exe")) {
+      return binPath;
+    }
+    if (stat.isDirectory()) {
+      const files = fs.readdirSync(binPath);
+      const exes = files.filter((f) => f.toLowerCase().endsWith(".exe"));
+      const preferred = ["XXMI Launcher.exe", "3DMigoto Loader.exe", "XXMI.exe"];
+      for (const name of preferred) {
+        const found = exes.find((f) => f.toLowerCase() === name.toLowerCase());
+        if (found) {
+          return path.join(binPath, found);
+        }
+      }
+      if (exes.length > 0) {
+        return path.join(binPath, exes[0]);
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function isSteamRunning() {
+  try {
+    const tasks = execSync('tasklist /FI "IMAGENAME eq steam.exe" /NH', { encoding: "utf8" });
+    return tasks.toLowerCase().includes("steam.exe");
+  } catch {
+    return false;
+  }
+}
+
+function closeSteam(steamDir) {
+  if (!isSteamRunning()) return;
+  const steamExe = path.join(steamDir, "steam.exe");
+  try {
+    execSync(`"${steamExe}" -shutdown`, { stdio: "ignore" });
+  } catch {
+    try {
+      execSync("taskkill /F /IM steam.exe", { stdio: "ignore" });
+    } catch {}
+  }
+
+  for (let i = 0; i < 10; i++) {
+    try {
+      execSync("timeout /t 1 >nul 2>&1 || ping -n 2 127.0.0.1 >nul", { stdio: "ignore" });
+    } catch {}
+    if (!isSteamRunning()) break;
+  }
+}
+
+function configureSteamLaunchOptions(steamDir, xxmiExe) {
+  if (!steamDir) return false;
+
+  const userdataDir = path.join(steamDir, "userdata");
+  if (!fs.existsSync(userdataDir)) {
+    return false;
+  }
+
+  let users = [];
+  try {
+    users = fs.readdirSync(userdataDir).filter((f) => !isNaN(f));
+  } catch (e) {
+    return false;
+  }
+
+  if (users.length === 0) {
+    return false;
+  }
+
+  const cleanExe = xxmiExe.replace(/^["']|["']$/g, "").trim();
+  const APP_ID = "4162040";
+  
+  const rawOption = `"${cleanExe}" --nogui --xxmi ZZMI %COMMAND%`;
+  const vdfEscapedValue = rawOption.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const targetLaunchOptionLine = `"LaunchOptions"\t\t"${vdfEscapedValue}"`;
+
+  let modified = false;
+
+  for (const userId of users) {
+    const configFile = path.join(userdataDir, userId, "config", "localconfig.vdf");
+    if (!fs.existsSync(configFile)) continue;
+
+    try {
+      let content = fs.readFileSync(configFile, "utf8");
+
+      if (content.includes(`"${APP_ID}"`) && content.includes(vdfEscapedValue)) {
+        continue;
+      }
+
+      closeSteam(steamDir);
+
+      content = fs.readFileSync(configFile, "utf8");
+
+      const appRegex = new RegExp(`("${APP_ID}"\\s*\\{[\\s\\S]*?\\})`, "i");
+      const match = content.match(appRegex);
+
+      if (match) {
+        let appBlock = match[1];
+        if (/"LaunchOptions"/i.test(appBlock)) {
+          appBlock = appBlock.replace(/"LaunchOptions"[^\r\n]*/i, () => targetLaunchOptionLine);
+        } else {
+          appBlock = appBlock.replace("{", `{\n\t\t\t\t\t${targetLaunchOptionLine}`);
+        }
+        content = content.replace(match[1], appBlock);
+        fs.writeFileSync(configFile, content, "utf8");
+        modified = true;
+      } else {
+        const appsRegex = /("apps"\s*\{)/i;
+        if (appsRegex.test(content)) {
+          content = content.replace(
+            appsRegex,
+            `$1\n\t\t\t\t"${APP_ID}"\n\t\t\t\t{\n\t\t\t\t\t${targetLaunchOptionLine}\n\t\t\t\t}`
+          );
+          fs.writeFileSync(configFile, content, "utf8");
+          modified = true;
+        }
+      }
+    } catch (e) {
+    }
+  }
+
+  return modified;
+}
+
+let _cachedRunning = false;
+let _checkingProcess = false;
+
+function checkGameRunningAsync(callback) {
+  if (_checkingProcess) {
+    if (typeof callback === "function") callback(_cachedRunning);
+    return;
+  }
+  _checkingProcess = true;
+  if (isWindows) {
+    exec('tasklist /NH /FI "IMAGENAME eq Zenless*"', { encoding: "utf8" }, (err, stdout) => {
+      _checkingProcess = false;
+      _cachedRunning = !err && /zenless/i.test(stdout || "");
+      if (typeof callback === "function") callback(_cachedRunning);
+    });
+  } else {
+    exec('pgrep -f "ZenlessZoneZero|Zenless"', (err, stdout) => {
+      _checkingProcess = false;
+      _cachedRunning = !err && (stdout || "").trim().length > 0;
+      if (typeof callback === "function") callback(_cachedRunning);
+    });
+  }
+}
+
+function isGameRunning() {
+  return _cachedRunning;
+}
+
+function monitorGameExit(settings, t) {
+  let consecutiveMisses = 0;
+  const exitInterval = setInterval(() => {
+    checkGameRunningAsync((running) => {
+      if (running) {
+        consecutiveMisses = 0;
+      } else {
+        consecutiveMisses++;
+        if (consecutiveMisses >= 2) {
+          clearInterval(exitInterval);
+          ipcRenderer.send("restore-from-tray");
+        }
+      }
+    });
+  }, 3000);
+}
+
 function checkGameStartup(settings, t) {
   let attempts = 0;
   const maxAttempts = 15;
 
   const checkInterval = setInterval(() => {
     attempts++;
-    try {
-      execSync(checkGameProcessCommand, { stdio: 'ignore' });
-      
-      clearInterval(checkInterval);
-      notify(t("start_success_title"), t("start_success_msg"), "success");
+    checkGameRunningAsync((running) => {
+      if (running) {
+        clearInterval(checkInterval);
+        notify(t("start_success_title"), t("start_success_msg"), "success");
 
-      if (settings.minimizeTray) {
-        ipcRenderer.send("minimize-to-tray");
-      }
-    } catch (e) {
-      if (attempts >= maxAttempts) {
+        if (settings.minimizeTray) {
+          ipcRenderer.send("minimize-to-tray");
+        }
+
+        if (settings.restoreOnExit) {
+          monitorGameExit(settings, t);
+        }
+      } else if (attempts >= maxAttempts) {
         clearInterval(checkInterval);
         notify(t("start_wait_title"), t("start_wait_msg"), "warning");
       }
-    }
+    });
   }, 2000);
 }
 
+function killGame(callback) {
+  _cachedRunning = false;
+  if (isWindows) {
+    const psCmd = 'powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match \'Zenless|ZFGame|UnityCrashHandler|XXMI|3DMigoto\' } | Invoke-CimMethod -MethodName Terminate -ErrorAction SilentlyContinue"';
+    const taskkillCmd = 'taskkill /F /IM ZenlessZoneZero.exe /IM ZFGameBrowser.exe /IM UnityCrashHandler64.exe /IM "XXMI Launcher.exe" /IM "3DMigoto Loader.exe" /IM 3DMigoto.exe /IM XXMI.exe /FI "IMAGENAME eq Zenless*" /T';
+
+    exec(psCmd, () => {
+      exec(taskkillCmd, () => {
+        checkGameRunningAsync((running) => {
+          if (typeof callback === "function") callback(running);
+        });
+      });
+    });
+  } else {
+    const linuxCmd = 'pkill -15 -f ZenlessZoneZero; pkill -15 -f Zenless; pkill -9 -f ZenlessZoneZero; pkill -9 -f Zenless; pkill -9 -f "XXMI Launcher"; pkill -9 -f "3DMigoto Loader"; pkill -9 -f 3DMigoto; pkill -9 -f XXMI; pkill -9 -f 4162040; killall -9 ZenlessZoneZero.exe';
+    exec(linuxCmd, () => {
+      checkGameRunningAsync((running) => {
+        if (typeof callback === "function") callback(running);
+      });
+    });
+  }
+}
+
 module.exports = {
+  isGameRunning,
+  checkGameRunningAsync,
+  killGame,
   launch: (settings, t) => {
     const binPath = settings.xxmiBinPath;
     if (!binPath) {
@@ -119,22 +401,7 @@ module.exports = {
       return;
     }
 
-    let xxmiExe = null;
-    if (fs.existsSync(binPath)) {
-      const stat = fs.statSync(binPath);
-      if (stat.isFile() && binPath.toLowerCase().endsWith(".exe")) {
-        xxmiExe = binPath;
-      } else if (stat.isDirectory()) {
-        const files = fs.readdirSync(binPath);
-        const exes = files.filter((f) => f.toLowerCase().endsWith(".exe"));
-        if (exes.includes("XXMI Launcher.exe")) {
-          xxmiExe = path.join(binPath, "XXMI Launcher.exe");
-        } else if (exes.length > 0) {
-          xxmiExe = path.join(binPath, exes[0]);
-        }
-      }
-    }
-
+    const xxmiExe = findXxmiExe(binPath);
     if (!xxmiExe) {
       notify(t("start_err_title"), t("start_err_exe"), "error");
       return;
@@ -198,7 +465,9 @@ module.exports = {
       }
 
       const appidTxt = path.join(path.dirname(gameExe), "steam_appid.txt");
-      fs.writeFileSync(appidTxt, APP_ID);
+      try {
+        fs.writeFileSync(appidTxt, APP_ID);
+      } catch (e) {}
 
       try {
         const child = spawn(
@@ -210,6 +479,13 @@ module.exports = {
             stdio: "ignore",
           }
         );
+        child.on("error", (err) => {
+          notify(
+            t("start_sys_err_title"),
+            t("start_sys_err_msg", { error: err.message }),
+            "error"
+          );
+        });
         child.unref();
 
         notify(t("start_launch_title"), t("start_launch_msg"), "info");
@@ -222,28 +498,29 @@ module.exports = {
         );
       }
     } else if (isWindows) {
-      try {
-        notify(t("start_prep_title"), t("start_prep_msg"), "info");
-        const child = spawn(
-          xxmiExe,
-          ["--nogui", "--xxmi", "ZZMI"],
-          {
-            detached: true,
-            stdio: "ignore",
-            cwd: path.dirname(xxmiExe)
-          }
-        );
-        child.unref();
+      const APP_ID = "4162040";
+      notify(t("start_prep_title"), t("start_prep_msg"), "info");
 
-        notify(t("start_launch_title"), t("start_launch_msg"), "info");
-        checkGameStartup(settings, t);
-      } catch (err) {
-        notify(
-          t("start_sys_err_title"),
-          t("start_sys_err_msg", { error: err.message }),
-          "error"
-        );
+      const steamDir = getSteamPaths();
+      if (steamDir) {
+        try {
+          configureSteamLaunchOptions(steamDir, xxmiExe);
+        } catch (e) {}
       }
+
+      notify(t("start_launch_title"), t("start_launch_msg"), "info");
+
+      exec(`start "" "steam://rungameid/${APP_ID}"`, (err) => {
+        if (err) {
+          notify(
+            t("start_sys_err_title"),
+            t("start_sys_err_msg", { error: err.message }),
+            "error"
+          );
+        }
+      });
+
+      checkGameStartup(settings, t);
     }
   }
 };

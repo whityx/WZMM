@@ -1,6 +1,6 @@
 {
   "name": "why-zenless-mod-manager",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "ZZZ Mod Manager for windows & linux",
   "main": "main.js",
   "author": "whityx",
@@ -70,6 +70,7 @@
       "!.git/**/*",
       "!dist/**/*",
       "!modelviewer/.venv/**/*",
+      "!modelviewer/.python/**/*",
       "!.agents/**/*",
       "!.tests/**/*"
     ]
