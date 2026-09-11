@@ -312,7 +312,7 @@ function checkGameRunningAsync(callback) {
       if (typeof callback === "function") callback(_cachedRunning);
     });
   } else {
-    exec('pgrep -f "ZenlessZoneZero|Zenless"', (err, stdout) => {
+    exec('pgrep -i -f "ZenlessZoneZero\\.exe"', (err, stdout) => {
       _checkingProcess = false;
       _cachedRunning = !err && (stdout || "").trim().length > 0;
       if (typeof callback === "function") callback(_cachedRunning);
@@ -381,7 +381,7 @@ function killGame(callback) {
       });
     });
   } else {
-    const linuxCmd = 'pkill -15 -f ZenlessZoneZero; pkill -15 -f Zenless; pkill -9 -f ZenlessZoneZero; pkill -9 -f Zenless; pkill -9 -f "XXMI Launcher"; pkill -9 -f "3DMigoto Loader"; pkill -9 -f 3DMigoto; pkill -9 -f XXMI; pkill -9 -f 4162040; killall -9 ZenlessZoneZero.exe';
+    const linuxCmd = 'pkill -15 -i -f "ZenlessZoneZero\\.exe"; pkill -15 -i -f "3DMigoto Loader\\.exe"; pkill -15 -i -f "XXMI Launcher\\.exe"; pkill -15 -i -f "XXMI\\.exe"; sleep 0.5; pkill -9 -i -f "ZenlessZoneZero\\.exe"; pkill -9 -i -f "3DMigoto Loader\\.exe"; pkill -9 -i -f "XXMI Launcher\\.exe"; pkill -9 -i -f "XXMI\\.exe"';
     exec(linuxCmd, () => {
       checkGameRunningAsync((running) => {
         if (typeof callback === "function") callback(running);

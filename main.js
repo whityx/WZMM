@@ -383,6 +383,11 @@ if (!gotTheLock) {
         updateTrayMenu(labels);
     });
 
+    ipcMain.on('update-game-running-state', (event, state) => {
+        isGameRunning = !!state;
+        updateTrayMenu();
+    });
+
     ipcMain.handle('open-3d-viewer', async (event, data) => {
         try {
             const { spawn } = require('child_process');

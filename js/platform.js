@@ -6,7 +6,7 @@ const isLinux = platform === 'linux';
 
 const checkGameProcessCommand = isWindows
   ? 'tasklist | findstr /i "ZenlessZoneZero"'
-  : 'pgrep -f "ZenlessZoneZero"';
+  : 'pgrep -i -f "ZenlessZoneZero\\.exe"';
 
 const defaultXxmiPath = isWindows ? 'C:\\XXMI\\ZZMI\\' : '/home/XXMI/ZZMI/';
 const defaultXxmiBinPath = isWindows ? 'C:\\XXMI\\Resources\\Bin\\' : '/home/XXMI/Resources/Bin/';
